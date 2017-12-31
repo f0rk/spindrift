@@ -456,7 +456,16 @@ def _locate_top_level(dependency):
 
         # could also be a .dist-info bundle
         dist_info_name = "{}-{}.dist-info".format(
-            dependency.key,
+            dependency.key.replace("-", "_"),
+            dependency.version,
+        )
+        dist_info_path = os.path.join(dependency.location, dist_info_name)
+        paths_to_try.append(dist_info_path)
+
+        # and try capitalized name in dist info, too
+        rr = dependency.as_requirement()
+        dist_info_name = "{}-{}.dist-info".format(
+            rr.name.replace("-", "_"),
             dependency.version,
         )
         dist_info_path = os.path.join(dependency.location, dist_info_name)
