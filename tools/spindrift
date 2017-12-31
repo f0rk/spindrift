@@ -1,0 +1,8 @@
+#!/usr/bin/env python
+# Copyright 2017, Ryan P. Kelly.
+
+from spindrift.cli import App
+
+
+app = App()
+app.run()

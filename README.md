@@ -58,6 +58,9 @@ applicable, `spindrift` will use locally-available or architecture-specific
 wheels to ensure that nothing needs to be compiled specifically to run on
 lambda.
 
+Note that most other solutions package every old thing they can find in your
+virtualenv. `spindrift` only tries to identify declared dependencies.
+
 Lambda then expects a function that it can import and call. `spindrift` adds
 the appropriate file, and zips the whole package up. If an output path is
 specified, `spindrift` will copy the package to appropriate output path.

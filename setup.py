@@ -13,6 +13,7 @@ setup(
     install_requires=[
         "lambda-packages",
         "pip",
+        "pyyaml",
         "requests",
         "werkzeug",
     ],
@@ -21,6 +22,7 @@ setup(
     ],
     package_dir={"": "lib"},
     packages=["spindrift"],
+    scripts=["tools/spindrift"],
     include_package_data=True,
     zip_safe=False,
 )
