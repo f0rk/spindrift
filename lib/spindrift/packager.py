@@ -429,8 +429,7 @@ def install_local_package_from_egg(path, dependency):
                     names_to_copy.append(name)
 
             # extract all the files to our output location
-            destination = os.path.join(path, folder)
-            zf.extractall(destination, names_to_copy)
+            zf.extractall(path, names_to_copy)
 
         # hopefully
         return True
