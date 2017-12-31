@@ -142,6 +142,10 @@ def _install_precompiled_version(path, dependency, check_version):
     if name not in lambda_packages:
         return False
 
+    # no version for this runtime
+    if RUNTIME not in lambda_packages[name]:
+        return False
+
     package = lambda_packages[name][RUNTIME]
 
     # check for the correct version
