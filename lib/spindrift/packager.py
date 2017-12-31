@@ -320,21 +320,36 @@ def install_local_package(path, dependency):
         if os.path.isfile(egg_zip_path):
             return install_local_package_from_egg(path, dependency)
 
+        to_copy = []
+
         top_level_path = _locate_top_level(dependency)
         if not top_level_path:
-            raise Exception("Unable to install local package for {}, "
-                            "top_level.txt was not found".format(dependency))
+
+            # last ditch attempt, assume that the key of the package is the
+            # actual folder name
+            package_with_top_level = os.path.join(
+                dependency.location,
+                dependency.key,
+            )
+
+            if not os.path.exists(package_with_top_level):
+                raise Exception("Unable to install local package for {}, "
+                                "top_level.txt was not found"
+                                .format(dependency))
+
+            # well... we found something
+            to_copy.append(dependency.key)
 
         # read folder names out of top_level.txt
-        to_copy = []
-        with open(top_level_path, "r") as fp:
-            for line in fp:
-                line = line.strip()
+        else:
+            with open(top_level_path, "r") as fp:
+                for line in fp:
+                    line = line.strip()
 
-                if not line:
-                    continue
+                    if not line:
+                        continue
 
-                to_copy.append(line)
+                    to_copy.append(line)
 
         # copy each found folder into our output
         for folder in to_copy:
