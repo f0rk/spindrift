@@ -52,10 +52,7 @@ def populate_directory(path, package, type, entry, dependencies):
     # install our project itself
     install_project(path, package)
 
-    # compile pyc files, as possible
-    compile_files(path)
-
-    # prune away any now-compiled python files
+    # prune away any unused files
     prune_python_files(path)
 
     # insert our shim
@@ -335,11 +332,21 @@ def install_local_package(path, dependency):
             source = os.path.join(dependency.location, folder)
             destination = os.path.join(path, folder)
 
-            shutil.copytree(
-                source,
-                destination,
-                ignore=shutil.ignore_patterns(*IGNORED),
-            )
+            # maybe we're dealing with a .py file instead of a directory
+            if not os.path.exists(source):
+                py_source = source + ".py"
+                if os.path.exists(py_source):
+                    source = py_source
+                    destination = destination + ".py"
+
+            if os.path.isfile(source):
+                shutil.copyfile(source, destination)
+            else:
+                shutil.copytree(
+                    source,
+                    destination,
+                    ignore=shutil.ignore_patterns(*IGNORED),
+                )
 
     else:
         raise Exception("Unable to install local package for {}, neither a "
@@ -422,6 +429,13 @@ def _locate_top_level(dependency):
         )
         paths_to_try.append(egg_info_path)
 
+        # also try replacing - with _ for a local .egg-info
+        egg_info_path = os.path.join(
+            dependency.location,
+            dependency.key.replace("-", "_") + ".egg-info",
+        )
+        paths_to_try.append(egg_info_path)
+
         egg_name = dependency.egg_name()
         egg_info_path = os.path.join(
             dependency.location,
@@ -456,12 +470,6 @@ def install_project(path, name):
     package = pip._vendor.pkg_resources.working_set.by_key[name]
 
     return install_local_package(path, package)
-
-
-def compile_files(path):
-
-    # is it really that simple...
-    compileall.compile_dir(path, quiet=True)
 
 
 def prune_python_files(path):
@@ -559,6 +567,10 @@ def create_zip_bundle(path, zip_path):
 
                 # create a zip info object...
                 zi = zipfile.ZipInfo(truncated)
+
+                # ensure our files are readable
+                # XXX: seems like a hack...
+                zi.external_attr = 0o755 << 16
 
                 # ...and put it in our zip file
                 with open(real_file_path, "rb") as fp:

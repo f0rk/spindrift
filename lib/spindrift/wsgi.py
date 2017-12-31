@@ -4,7 +4,7 @@ import io
 import sys
 import urllib
 
-from werkzeug.helpers import Response
+from werkzeug.wrappers import Response
 from werkzeug.wsgi import ClosingIterator
 
 
@@ -23,7 +23,8 @@ def handler(app, event, context):
     ret = {}
 
     # populate the body
-    ret["body"] = response.data
+    ret["body"] = response.get_data(as_text=True) # XXX: binary support...
+    ret["isBase64Encoded"] = False
 
     # add in a status code
     ret["statusCode"] = response.status_code
@@ -37,36 +38,38 @@ def handler(app, event, context):
     return ret
 
 
-def create_wsgi_environ(event_info):
+def create_wsgi_environ(event):
 
     # see https://www.python.org/dev/peps/pep-0333/
 
     # determine GET, POST, etc.
-    method = event_info["httpMethod"]
+    method = event["httpMethod"]
 
     # determine the script name
     script_name = "" # XXX: this shouldn't always be root
 
     # decode the path being request
-    path = event_info["path"]
+    path = event["path"]
     path = urllib.parse.unquote_plus(path)
 
     # format the query string
-    query = event_info["queryStringParameters"]
-    query_string = urllib.parse.urlencode(query)
+    query = event["queryStringParameters"]
+    query_string = ""
+    if query:
+        query_string = urllib.parse.urlencode(query)
 
     # server name should be configurable?
     server_name = "spindrift"
 
     # fixup headers
-    headers = event_info["headers"]
+    headers = event["headers"] or {}
     for header in headers:
         canonical = header.title()
         if header != canonical:
             headers[canonical] = headers.pop(header)
 
     # XXX: do we trust this?
-    server_port = headers.get("X-Forwarded-Port", "80"),
+    server_port = headers.get("X-Forwarded-Port", "80")
 
     # determine the remote address
     x_forwarded_for = headers.get("X-Forwarded-For", "")
@@ -84,7 +87,7 @@ def create_wsgi_environ(event_info):
     wsgi_url_scheme = headers.get("X-Forwarded-Proto", "http"),
 
     # retrieve the body and encode it
-    body = event_info["body"]
+    body = event["body"]
     if isinstance(body, str):
         body = body.encode("utf-8")
 
@@ -113,7 +116,9 @@ def create_wsgi_environ(event_info):
         environ["CONTENT_TYPE"] = content_type
 
     # determine content-length from the body of request
-    environ["CONTENT_LENGTH"] = len(body)
+    environ["CONTENT_LENGTH"] = 0
+    if body:
+        environ["CONTENT_LENGTH"] = len(body)
 
     # apply all HTTP_* headers into the environ
     for header, value in headers.items():
