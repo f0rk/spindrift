@@ -2,10 +2,8 @@
 
 import compileall
 import fnmatch
-import importlib
 import os.path
 import shutil
-import sys
 import tarfile
 import tempfile
 import zipfile
@@ -31,7 +29,7 @@ IGNORED = [
 lambda_packages = {k.lower(): v for k, v in _lambda_packages.items()}
 
 
-def package(package, entry, destination):
+def package(package, type, entry, destination):
 
     # determine what our dependencies are
     dependencies = find_dependencies(package)
@@ -40,13 +38,13 @@ def package(package, entry, destination):
     with tempfile.TemporaryDirectory() as temp_path:
 
         # collect our code...
-        populate_directory(temp_path, package, entry, dependencies)
+        populate_directory(temp_path, package, type, entry, dependencies)
 
         # ...and create the archive
         output_archive(temp_path, destination)
 
 
-def populate_directory(path, package, entry, dependencies):
+def populate_directory(path, package, type, entry, dependencies):
 
     # install our dependencies
     install_dependencies(path, package, dependencies)
@@ -61,7 +59,7 @@ def populate_directory(path, package, entry, dependencies):
     prune_python_files(path)
 
     # insert our shim
-    insert_shim(path, entry)
+    insert_shim(path, type, entry)
 
 
 def output_archive(path, destination):
@@ -80,6 +78,11 @@ def find_dependencies(package_name):
     import pip
 
     package = pip._vendor.pkg_resources.working_set.by_key[package_name]
+
+    # boto is available on lambda, don't repackage it
+    # XXX: make this configurable?
+    if package.key in ("boto3", "botocore"):
+        return []
 
     ret = [package]
 
@@ -332,7 +335,6 @@ def install_local_package(path, dependency):
             source = os.path.join(dependency.location, folder)
             destination = os.path.join(path, folder)
 
-            print("going to copy {} to {}".format(source, destination))
             shutil.copytree(
                 source,
                 destination,
@@ -396,7 +398,6 @@ def install_local_package_from_egg(path, dependency):
 
             # extract all the files to our output location
             destination = os.path.join(path, folder)
-            print("going to copy {} to {}".format(names_to_copy, destination))
             zf.extractall(destination, names_to_copy)
 
 
@@ -492,11 +493,58 @@ def prune_python_files(path):
             os.unlink(py_file)
 
 
-def insert_shim(path, entry):
+def insert_shim(path, type, entry):
 
+    if type == "plain":
+        write_plain_shim(path, entry)
+    elif type == "flask":
+        install_flask_resources(path)
+        write_flask_shim(path, entry)
+
+
+def write_plain_shim(path, entry):
     index_path = os.path.join(path, "index.py")
     with open(index_path, "w") as fp:
         fp.write(entry)
+
+
+def install_flask_resources(path):
+
+    # locate spindrift's wsgi file
+    import spindrift
+    init_path = spindrift.__file__
+    lib_path, _ = os.path.split(init_path)
+    wsgi_path = os.path.join(lib_path, "wsgi.py")
+
+    # create a spindrift folder
+    spindrift_output_path = os.path.join(path, "spindrift")
+    if not os.path.exists(spindrift_output_path):
+        os.makedirs(spindrift_output_path)
+
+        # add an __init__.py
+        spindrift_init_output_path = os.path.join(
+            spindrift_output_path,
+            "__init__.py",
+        )
+        with open(spindrift_init_output_path, "w"):
+            pass
+
+        # copy the wsgi.py file in
+        spindrift_wsgi_output_path = os.path.join(
+            spindrift_output_path,
+            "wsgi.py",
+        )
+        shutil.copyfile(wsgi_path, spindrift_wsgi_output_path)
+
+
+def write_flask_shim(path, entry):
+    index_path = os.path.join(path, "index.py")
+    with open(index_path, "w") as fp:
+        fp.write("import spindrift.wsgi\n")
+        fp.write(entry)
+        fp.write("\n")
+        fp.write("def handler(event, context):\n")
+        fp.write("    return spindrift.wsgi.handler(app, event, context)\n")
 
 
 def create_zip_bundle(path, zip_path):

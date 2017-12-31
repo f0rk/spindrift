@@ -14,6 +14,7 @@ setup(
         "lambda-packages",
         "pip",
         "requests",
+        "werkzeug",
     ],
     tests_require=[
         "pytest",
