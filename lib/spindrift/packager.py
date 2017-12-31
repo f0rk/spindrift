@@ -200,6 +200,12 @@ def download_and_install_manylinux_version(path, dependency):
     # get package info from pypi
     name = dependency.key
     res = requests.get("https://pypi.python.org/pypi/{}/json".format(name))
+
+    # if we don't find the package there, bail
+    if res.status_code == 404:
+        return False
+
+    # raise for other errors though
     res.raise_for_status()
 
     # see if we can locate our version in the result
