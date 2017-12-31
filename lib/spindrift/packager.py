@@ -400,7 +400,6 @@ def install_local_package_from_egg(path, dependency):
             destination = os.path.join(path, folder)
             zf.extractall(destination, names_to_copy)
 
-
         # hopefully
         return True
 
@@ -567,8 +566,4 @@ def create_zip_bundle(path, zip_path):
 
 
 def output_zip_bundle(zip_path, destination):
-
-    if destination.startswith("s3://"):
-        raise NotImplemented()
-
     shutil.copyfile(zip_path, destination)

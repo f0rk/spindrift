@@ -8,19 +8,19 @@ Currently, `spindrift` only supports "plain" and `flask` applications, but
 support for additional deployment modes is planned.
 
 What `spindrift` does:
-    - packages your code and all necessary dependencies into a
-      lambda-compatible zip file.
+- packages your code and all necessary dependencies into a
+  lambda-compatible zip file.
 
-    - includes the appropriate shim so that your application doesn't need to
-      know it's inside of lambda.
-    - helps you integrate with an infrastructure tool for deployment:
-        - provides you with a `terraform` template to get you started
-        - planned support for a `cloudformation` template as well
-    - optionally uploads your code to S3
+- includes the appropriate shim so that your application doesn't need to
+  know it's inside of lambda.
+- helps you integrate with an infrastructure tool for deployment:
+    - provides you with a `terraform` template to get you started.
+    - planned support for a `cloudformation` template as well.
+- puts a zip package where you asked.
         
 What `spindrift` doesn't:
-    - create any policies, S3 buckets, or other resources in AWS
-    - actually deploy anything to lambda
+- create any policies, S3 buckets, or other resources in AWS
+- actually deploy anything to lambda
 
 If you're looking for a more out-of-the-box there's-only-this-one-way-to-do-it
 approach, `zappa` will be your cup of tea. It's a fantastic library that can
@@ -39,13 +39,13 @@ package:
   entry: from yourwebapp.main import app
 
 output:
-  path: s3://lambda.yourwebapp.bucket/yourwebapp.zip
+  path: /tmp/yourwebapp.zip
 ```
 
 This file tells `spindrift` that it is working with a `flask` application and
-where to find the `app`. It also tells `spindrift` to upload the output to S3.
-The output section is optional, as you can configure (or override) the output
-destination on the command line.
+where to find the `app`. It also tells `spindrift` to save the output to
+/tmp/yourwebapp.zip.  The output section is optional, as you can configure (or
+override) the output destination on the command line.
 
 To get `spindrift` to make a package for you:
 ```!bash
