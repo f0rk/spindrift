@@ -154,7 +154,7 @@ def _install_precompiled_version(path, dependency, check_version):
             return False
 
     tf = tarfile.open(package["path"], mode="r:gz")
-    for member in tf.members():
+    for member in tf.members:
         tf.extract(member, path)
 
     # yahtzee.
