@@ -30,6 +30,23 @@ lambda_packages = {k.lower(): v for k, v in _lambda_packages.items()}
 
 
 def package(package, type, entry, destination):
+    """Package up the given package.
+
+    :param package: The name of the package to bundle up.
+    :param type: The type of package to create. Currently, the only valid
+        values are `"plain"`, which is for simple lambda functions written in
+        the standard `handler(event, context)` style, and `"flask"` for flask
+        applications.
+    :param entry: A string describing the entrypoint of the application. For
+        type `"plain"` applications, this should import the handler function
+        itself and name it `handler`, i.e. `from yourplainapp.handlers import
+        snake_handler as handler`.  For `"flask"` applications, this should
+        import your application and call it `app`, i.e., `from yourwebapp.app
+        import api_app as app`.
+    :param destination: A path on the file system to store the resulting file.
+        No parent directories will be created, so you must ensure they exist.
+
+    """
 
     # determine what our dependencies are
     dependencies = find_dependencies(package)
