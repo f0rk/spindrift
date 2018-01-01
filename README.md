@@ -19,7 +19,7 @@ What `spindrift` doesn't:
 - actually deploy anything to lambda
 
 If you're looking for a more out-of-the-box there's-only-this-one-way-to-do-it
-approach, `[zappa](https://github.com/Miserlou/Zappa)` will be your cup of tea.
+approach, [zappa](https://github.com/Miserlou/Zappa) will be your cup of tea.
 It's a fantastic library that can definitely get you up and running, albeit in
 the `zappa` way. If you're looking for a more modular solution, `spindrift` is
 your drink of choice.
