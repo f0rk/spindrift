@@ -45,6 +45,12 @@ class App(object):
         )
 
         parser.add_argument(
+            "--package-runtime",
+            help="the runtime to package for",
+            choices=["python2.7", "python3.6"],
+        )
+
+        parser.add_argument(
             "--output-path",
             help="where to output the resulting zip file",
         )
@@ -71,6 +77,7 @@ class App(object):
                 "name",
                 "type",
                 "entry",
+                "runtime",
             },
             "output": {
                 "path",
@@ -92,6 +99,7 @@ class App(object):
                 settings["package"]["name"],
                 settings["package"].get("type", "plain"),
                 settings["package"]["entry"],
+                settings["package"]["runtime"],
                 settings["output"]["path"],
             )
         else:

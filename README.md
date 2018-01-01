@@ -34,6 +34,7 @@ package:
   type: flask
   name: yourwebapp
   entry: from yourwebapp.main import app
+  runtime: python3.6
 
 output:
   path: /tmp/yourwebapp.zip
@@ -57,6 +58,7 @@ optional, as everything can be specified via the command line:
     --package-name yourwebapp \
     --package-type flask \
     --package-entry 'from yourwebapp.main import app' \
+    --package-runtime python3.6 \
     --output-path /tmp/yourwebapp.zip
 ```
 
@@ -99,6 +101,7 @@ spindrift.packager.package(
     "yourwebapp", # the name of your package
     "flask", # the type of package you want to create
     "from yourwebapp.app import app", # the entry point
+    "python3.6", # the runtime
     "/tmp/yourwebapp.zip", # where to send the output
 )
 ```
@@ -129,6 +132,7 @@ with tempfile.NamedTemporaryFile(suffix=".zip") as tf:
         "yourwebapp",
         "flask",
         "from yourwebapp.app import app",
+        "python3.6",
         tf.name,
     )
 

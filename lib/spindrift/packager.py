@@ -12,10 +12,6 @@ import requests
 from lambda_packages import lambda_packages as _lambda_packages
 
 
-# XXX: detect this automatically...
-RUNTIME = "python3.6"
-
-
 IGNORED = [
     "__pycache__",
     ".git",
@@ -29,7 +25,7 @@ IGNORED = [
 lambda_packages = {k.lower(): v for k, v in _lambda_packages.items()}
 
 
-def package(package, type, entry, destination):
+def package(package, type, entry, runtime, destination):
     """Package up the given package.
 
     :param package: The name of the package to bundle up.
@@ -43,6 +39,8 @@ def package(package, type, entry, destination):
         snake_handler as handler`.  For `"flask"` applications, this should
         import your application and call it `app`, i.e., `from yourwebapp.app
         import api_app as app`.
+    :param runtime: The runtime to package for. Must be either `"python2.7"` or
+        `"python3.6"`.
     :param destination: A path on the file system to store the resulting file.
         No parent directories will be created, so you must ensure they exist.
 
@@ -55,16 +53,23 @@ def package(package, type, entry, destination):
     with tempfile.TemporaryDirectory() as temp_path:
 
         # collect our code...
-        populate_directory(temp_path, package, type, entry, dependencies)
+        populate_directory(
+            temp_path,
+            package,
+            type,
+            entry,
+            runtime,
+            dependencies,
+        )
 
         # ...and create the archive
         output_archive(temp_path, destination)
 
 
-def populate_directory(path, package, type, entry, dependencies):
+def populate_directory(path, package, type, entry, runtime, dependencies):
 
     # install our dependencies
-    install_dependencies(path, package, dependencies)
+    install_dependencies(path, package, runtime, dependencies)
 
     # install our project itself
     install_project(path, package)
@@ -107,7 +112,7 @@ def find_dependencies(package_name):
     return list(set(ret))
 
 
-def install_dependencies(path, package, dependencies):
+def install_dependencies(path, package, runtime, dependencies):
 
     # for each dependency
     for dependency in dependencies:
@@ -122,22 +127,22 @@ def install_dependencies(path, package, dependencies):
         # attempts in order, and skip the remaining options if we succeed.
 
         # determine if we have a matching precompiled-version available
-        rv = install_matching_precompiled_version(path, dependency)
+        rv = install_matching_precompiled_version(path, dependency, runtime)
         if rv:
             continue
 
         # if not, see if we've got a manylinux version
-        rv = install_manylinux_version(path, dependency)
+        rv = install_manylinux_version(path, dependency, runtime)
         if rv:
             continue
 
         # maybe try downloading and installing a manylinux version?
-        rv = download_and_install_manylinux_version(path, dependency)
+        rv = download_and_install_manylinux_version(path, dependency, runtime)
         if rv:
             continue
 
         # still nothing? go for any precompiled-version
-        rv = install_any_precompiled_version(path, dependency)
+        rv = install_any_precompiled_version(path, dependency, runtime)
         if rv:
             continue
 
@@ -148,11 +153,11 @@ def install_dependencies(path, package, dependencies):
                             .format(dependency.key, dependency.version))
 
 
-def install_matching_precompiled_version(path, dependency):
-    return _install_precompiled_version(path, dependency, True)
+def install_matching_precompiled_version(path, dependency, runtime):
+    return _install_precompiled_version(path, dependency, runtime, True)
 
 
-def _install_precompiled_version(path, dependency, check_version):
+def _install_precompiled_version(path, dependency, runtime, check_version):
     name = dependency.key
 
     # no matching package? False.
@@ -160,10 +165,10 @@ def _install_precompiled_version(path, dependency, check_version):
         return False
 
     # no version for this runtime
-    if RUNTIME not in lambda_packages[name]:
+    if runtime not in lambda_packages[name]:
         return False
 
-    package = lambda_packages[name][RUNTIME]
+    package = lambda_packages[name][runtime]
 
     # check for the correct version
     if check_version:
@@ -178,24 +183,26 @@ def _install_precompiled_version(path, dependency, check_version):
     return True
 
 
-def install_manylinux_version(path, dependency):
+def install_manylinux_version(path, dependency, runtime):
 
     # XXX: where is this directory on other systems?
     wheel_cache_path = os.path.expanduser("~/.cache/pip")
 
     # sub out the rest of our work
-    rv = _install_manylinux_version_from_cache(
+    rv = _install_cached_manylinux_version(
         wheel_cache_path,
         path,
         dependency,
+        runtime,
     )
 
     if not rv:
         fake_cache_path = _get_fake_cache_path()
-        rv = _install_manylinux_version_from_cache(
+        rv = _install_cached_manylinux_version(
             fake_cache_path,
             path,
             dependency,
+            runtime,
         )
 
     return rv
@@ -205,7 +212,7 @@ def _get_fake_cache_path():
     return os.path.join(tempfile.gettempdir(), "spindrift_cache")
 
 
-def download_and_install_manylinux_version(path, dependency):
+def download_and_install_manylinux_version(path, dependency, runtime):
 
     # pip's wheel cache is kinda an implementation detail, so just create our
     # cache dir for now
@@ -228,7 +235,7 @@ def download_and_install_manylinux_version(path, dependency):
     # see if we can locate our version in the result
     data = res.json()
     version = dependency.version
-    wheel_suffix = _get_wheel_suffix(RUNTIME)
+    wheel_suffix = _get_wheel_suffix(runtime)
     if version not in data["releases"]:
         return False
 
@@ -271,7 +278,7 @@ def _get_wheel_suffix(runtime):
     return suffix
 
 
-def _install_manylinux_version_from_cache(cache_path, path, dependency):
+def _install_cached_manylinux_version(cache_path, path, dependency, runtime):
 
     # no cache? punt
     if not os.path.isdir(cache_path):
@@ -281,7 +288,7 @@ def _install_manylinux_version_from_cache(cache_path, path, dependency):
     available_wheels = load_cached_wheels(cache_path)
 
     # determine the correct name for the wheel we want
-    suffix = _get_wheel_suffix(RUNTIME)
+    suffix = _get_wheel_suffix(runtime)
 
     wheel_name = "{}-{}-{}".format(
         dependency.key,
@@ -315,8 +322,8 @@ def load_cached_wheels(path):
     return ret
 
 
-def install_any_precompiled_version(path, dependency):
-    return _install_precompiled_version(path, dependency, False)
+def install_any_precompiled_version(path, dependency, runtime):
+    return _install_precompiled_version(path, dependency, runtime, False)
 
 
 def install_local_package(path, dependency):
