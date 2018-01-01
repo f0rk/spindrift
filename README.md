@@ -60,10 +60,11 @@ optional, as everything can be specified via the command line:
     --output-path /tmp/yourwebapp.zip
 ```
 
-To get `spindrift` to make a package for you:
-```!bash
-~$ spindrift package
-```
+Now that a package has been created, you'll actually need to deploy it to
+lambda. You can do this manually, or you can use a proper orchestration tool.
+
+How it Works
+============
 
 `spindrift` will automatically determine all dependencies and their versions
 then copy all of the dependencies into a clean, new folder structure. Where
@@ -81,9 +82,6 @@ of this, you must make sure that your code is a package and that you've run
 Lambda then expects a function that it can import and call. `spindrift` adds
 the appropriate file, and zips the whole package up. If an output path is
 specified, `spindrift` will copy the package to appropriate output path.
-
-Now that a package has been created, you'll actually need to deploy it to
-lambda. You can do this manually, or you can use a proper orchestration tool.
 
 Library
 =======
