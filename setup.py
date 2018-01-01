@@ -6,7 +6,7 @@ from setuptools import setup
 setup(
     name="spindrift",
     version="0.1",
-    description="package and deploy python applications to AWS Lambda",
+    description="package python applications for AWS Lambda",
     author="Ryan P. Kelly",
     author_email="ryan@ryankelly.us",
     url="https://github.com/f0rk/spindrift",
