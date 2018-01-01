@@ -41,7 +41,16 @@ output:
 
 This file tells `spindrift` that it is working with a `flask` application and
 where to find the `app`. It also tells `spindrift` to save the output to
-/tmp/yourwebapp.zip.  The configuration file and all configuration items are
+`/tmp/yourwebapp.zip`.
+
+You then run `spindrift` like so:
+```!bash
+~$ spindrift package
+```
+
+And your code should be packaged up at `/tmp/yourwebapp.zip`.
+
+The configuration file and all configuration items are
 optional, as everything can be specified via the command line:
 ```!bash
 ~$ spindrift package \
