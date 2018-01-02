@@ -186,7 +186,11 @@ def _install_precompiled_version(path, dependency, runtime, check_version):
 def install_manylinux_version(path, dependency, runtime):
 
     # XXX: where is this directory on other systems?
-    wheel_cache_path = os.path.expanduser("~/.cache/pip")
+    wheel_cache_path = os.path.join(
+        os.path.expanduser("~"),
+        ".cache",
+        "pip",
+    )
 
     # sub out the rest of our work
     rv = _install_cached_manylinux_version(
