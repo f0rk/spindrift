@@ -11,6 +11,8 @@ import zipfile
 import requests
 from lambda_packages import lambda_packages as _lambda_packages
 
+import spindrift.compat
+
 
 IGNORED = [
     "__pycache__",
@@ -50,7 +52,7 @@ def package(package, type, entry, runtime, destination):
     dependencies = find_dependencies(package)
 
     # create a temporary directory to start creating things in
-    with tempfile.TemporaryDirectory() as temp_path:
+    with spindrift.compat.TemporaryDirectory() as temp_path:
 
         # collect our code...
         populate_directory(
