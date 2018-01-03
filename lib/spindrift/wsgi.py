@@ -124,9 +124,8 @@ def create_wsgi_environ(event):
     for header, value in headers.items():
         key_name = header.replace("-", "_")
         key_name = key_name.upper()
-
-        if key_name.startswith("HTTP_"):
-            environ[key_name] = value
+        key_name = "HTTP_" + key_name
+        environ[key_name] = value
 
     # send back our completed environ
     return environ
