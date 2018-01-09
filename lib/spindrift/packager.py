@@ -1,4 +1,4 @@
-# Copyright 2017, Ryan P. Kelly.
+# Copyright 2017-2018, Ryan P. Kelly.
 
 import compileall
 import fnmatch
@@ -178,8 +178,8 @@ def _install_precompiled_version(path, dependency, runtime, check_version):
             return False
 
     tf = tarfile.open(package["path"], mode="r:gz")
-    for member in tf.members:
-        tf.extract(member, path)
+    for member in tf.getmembers():
+        tf.extract(member, path=path)
 
     # yahtzee.
     return True
@@ -433,6 +433,8 @@ def install_local_package_from_egg(path, dependency):
             maybe_names_to_copy = []
             for name in all_names:
                 if name.startswith(folder + "/"):
+                    maybe_names_to_copy.append(name)
+                elif name == folder + ".py":
                     maybe_names_to_copy.append(name)
 
             # filter our files to only keey what we want
