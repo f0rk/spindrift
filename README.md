@@ -2,27 +2,28 @@ spindrift
 =========
 
 `spindrift` is a library that helps package python applications for deployment
-to AWS Lambda.
+to AWS Lambda or AWS Elastic Beanstalk.
 
-Currently, `spindrift` only supports "plain" and `flask` applications, but
-support for additional deployment modes is planned.
+Currently, `spindrift` only supports "plain" and `flask` applications for
+lambda and `flask` for elastic beanstalk, but support for additional deployment
+modes are planned.
 
 What `spindrift` does:
 - packages your code and all necessary dependencies into a
-  lambda-compatible zip file.
+  lambda compatible or elastic beanstalk compatible zip file.
 - includes the appropriate shim so that your application doesn't need to
-  know it's inside of lambda.
+  know it's inside of lambda or elastic beanstalk.
 - puts a zip package where you asked.
         
 What `spindrift` doesn't:
 - create any policies, S3 buckets, or other resources in AWS
-- actually deploy anything to lambda
+- actually deploy anything to lambda or elastic beanstalk
 
 If you're looking for a more out-of-the-box there's-only-this-one-way-to-do-it
-approach, [zappa](https://github.com/Miserlou/Zappa) will be your cup of tea.
-It's a fantastic library that can definitely get you up and running, albeit in
-the `zappa` way. If you're looking for a more modular solution, `spindrift` is
-your drink of choice.
+approach for lambda, [zappa](https://github.com/Miserlou/Zappa) will be your
+cup of tea.  It's a fantastic library that can definitely get you up and
+running, albeit in the `zappa` way. If you're looking for a more modular
+solution, `spindrift` is your drink of choice.
 
 Usage
 =====
@@ -65,6 +66,16 @@ optional, as everything can be specified via the command line:
 Now that a package has been created, you'll actually need to deploy it to
 lambda. You can do this manually, or you can use a proper orchestration tool.
 
+The usage for elastic beanstalk is slightly different:
+```!bash
+~$ spindrift package \
+    --package-name yourwebapp \
+    --package-type flask-eb \
+    --package-entry 'from yourwebapp.main import app as application' \
+    --package-runtime python3.6 \
+    --output-path /tmp/yourwebapp.zip
+```
+
 How it Works
 ============
 
@@ -72,7 +83,7 @@ How it Works
 then copy all of the dependencies into a clean, new folder structure. Where
 applicable, `spindrift` will use locally-available or architecture-specific
 wheels to ensure that nothing needs to be compiled specifically to run on
-lambda.
+lambda or elastic beanstalk.
 
 Note that most other solutions package everything they can find in your
 virtualenv. `spindrift` only tries to identify declared dependencies. Because
@@ -81,9 +92,10 @@ of this, you must make sure that your code is a package and that you've run
 `spindrift` is utilizing `pip` and information contained in each package's
 `top_level.txt` to figure out what files to include.
 
-Lambda then expects a function that it can import and call. `spindrift` adds
-the appropriate file, and zips the whole package up. If an output path is
-specified, `spindrift` will copy the package to appropriate output path.
+Lambda and elastic beanstalk then expect a file in a certain importable format.
+`spindrift` adds the appropriate file, and zips the whole package up. If an
+output path is specified, `spindrift` will copy the package to appropriate
+output path.
 
 Library
 =======

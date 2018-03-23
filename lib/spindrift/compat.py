@@ -1,4 +1,4 @@
-# Copyright 2017, Ryan P. Kelly.
+# Copyright 2017-2018, Ryan P. Kelly.
 
 """
 Python 2 to 3 compatability functions.

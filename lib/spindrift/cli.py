@@ -1,4 +1,4 @@
-# Copyright 2017, Ryan P. Kelly.
+# Copyright 2017-2018, Ryan P. Kelly.
 
 import argparse
 import os.path
@@ -34,14 +34,15 @@ class App(object):
         parser.add_argument(
             "--package-type",
             help="what kind of package you are creating",
-            choices=["plain", "flask"],
+            choices=["plain", "flask", "flask-eb"],
         )
 
         parser.add_argument(
             "--package-entry",
             help=("entry point to your code. should either be a handler "
                   "function or the flask app, and it must be imported as "
-                  "handler or as app"),
+                  "handler or as app for lambda, or application for elastic "
+                  "beanstalk"),
         )
 
         parser.add_argument(

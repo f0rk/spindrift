@@ -1,6 +1,5 @@
 # Copyright 2017-2018, Ryan P. Kelly.
 
-import compileall
 import fnmatch
 import os.path
 import shutil
@@ -34,13 +33,15 @@ def package(package, type, entry, runtime, destination):
     :param type: The type of package to create. Currently, the only valid
         values are `"plain"`, which is for simple lambda functions written in
         the standard `handler(event, context)` style, and `"flask"` for flask
-        applications.
+        applications. Use `"flask-eb"` for elastic beanstalk applications,
+        which must be flask applications.
     :param entry: A string describing the entrypoint of the application. For
         type `"plain"` applications, this should import the handler function
         itself and name it `handler`, i.e. `from yourplainapp.handlers import
         snake_handler as handler`.  For `"flask"` applications, this should
         import your application and call it `app`, i.e., `from yourwebapp.app
-        import api_app as app`.
+        import api_app as app`. For `"flask-eb"` applications, this should
+        import your application and call it `application`.
     :param runtime: The runtime to package for. Must be either `"python2.7"` or
         `"python3.6"`.
     :param destination: A path on the file system to store the resulting file.
@@ -49,7 +50,7 @@ def package(package, type, entry, runtime, destination):
     """
 
     # determine what our dependencies are
-    dependencies = find_dependencies(package)
+    dependencies = find_dependencies(type, package)
 
     # create a temporary directory to start creating things in
     with spindrift.compat.TemporaryDirectory() as temp_path:
@@ -95,7 +96,7 @@ def output_archive(path, destination):
         output_zip_bundle(temp_file.name, destination)
 
 
-def find_dependencies(package_name):
+def find_dependencies(type, package_name):
     import pip
 
     package = pip._vendor.pkg_resources.working_set.by_key[package_name]
@@ -103,13 +104,14 @@ def find_dependencies(package_name):
     # boto is available on lambda, don't repackage it
     # XXX: make this configurable?
     if package.key in ("boto3", "botocore"):
-        return []
+        if type != "flask-eb":
+            return []
 
     ret = [package]
 
     requires = package.requires()
     for requirement in requires:
-        ret.extend(find_dependencies(requirement.key))
+        ret.extend(find_dependencies(type, requirement.key))
 
     return list(set(ret))
 
@@ -572,6 +574,8 @@ def insert_shim(path, type, entry):
     elif type == "flask":
         install_flask_resources(path)
         write_flask_shim(path, entry)
+    elif type == "flask-eb":
+        write_eb_shim(path, entry)
 
 
 def write_plain_shim(path, entry):
@@ -617,6 +621,12 @@ def write_flask_shim(path, entry):
         fp.write("\n")
         fp.write("def handler(event, context):\n")
         fp.write("    return spindrift.wsgi.handler(app, event, context)\n")
+
+
+def write_eb_shim(path, entry):
+    index_path = os.path.join(path, "application.py")
+    with open(index_path, "w") as fp:
+        fp.write(entry)
 
 
 def create_zip_bundle(path, zip_path):

@@ -1,4 +1,8 @@
-# Copyright 2017, Ryan P. Kelly.
+# Copyright 2017-2018, Ryan P. Kelly.
+
+"""
+Lambda-Flask WSGI shim. Only used by Lambda.
+"""
 
 import io
 import sys
