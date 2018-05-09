@@ -97,7 +97,7 @@ def output_archive(path, destination):
 
 
 def find_dependencies(type, package_name):
-    import pip
+    import pip._vendor.pkg_resources
 
     package = pip._vendor.pkg_resources.working_set.by_key[package_name]
 
@@ -532,7 +532,7 @@ def _locate_top_level(dependency):
 
 
 def install_project(path, name):
-    import pip
+    import pip._vendor.pkg_resources
 
     package = pip._vendor.pkg_resources.working_set.by_key[name]
 
