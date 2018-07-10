@@ -2,6 +2,7 @@
 
 import fnmatch
 import os.path
+import re
 import shutil
 import tarfile
 import tempfile
@@ -127,34 +128,79 @@ def install_dependencies(path, package, runtime, dependencies):
             continue
 
         # each of the functions below will return false if they couldn't
-        # perform the request operation, or true if they did. perform the
+        # perform the requested operation, or true if they did. perform the
         # attempts in order, and skip the remaining options if we succeed.
 
         # determine if we have a matching precompiled-version available
         rv = install_matching_precompiled_version(path, dependency, runtime)
         if rv:
+            _mangle_package(path, dependency)
             continue
 
         # if not, see if we've got a manylinux version
         rv = install_manylinux_version(path, dependency, runtime)
         if rv:
+            _mangle_package(path, dependency)
             continue
 
         # maybe try downloading and installing a manylinux version?
         rv = download_and_install_manylinux_version(path, dependency, runtime)
         if rv:
+            _mangle_package(path, dependency)
             continue
 
         # still nothing? go for any precompiled-version
         rv = install_any_precompiled_version(path, dependency, runtime)
         if rv:
+            _mangle_package(path, dependency)
             continue
 
         # if we get this far, use whatever package we have installed locally
         rv = install_local_package(path, dependency)
-        if not rv:
-            raise Exception("Unable to find suitable source for {}=={}"
-                            .format(dependency.key, dependency.version))
+        if rv:
+            _mangle_package(path, dependency)
+            continue
+
+        raise Exception("Unable to find suitable source for {}=={}"
+                        .format(dependency.key, dependency.version))
+
+
+def _mangle_package(path, dependency):
+
+    # some packages just aren't ready to be used when bundled up locally.
+    # biggest offenders are packages using pkg_resources.get_distribution.
+    # here, we perform any package-specific source modifications.
+
+    if dependency.key == "sqlalchemy-redshift":
+
+        # overwrite __init__.py to replace pkg_resources.get_distribution call
+        # with hardcoded version and fix registry entry
+        sqlalchemy_redshift_init_path = os.path.join(
+            path,
+            "sqlalchemy_redshift",
+            "__init__.py",
+        )
+
+        with open(sqlalchemy_redshift_init_path, "r+") as fp:
+            current_init_data = fp.read()
+
+            version_expr = r"get_distribution\('sqlalchemy-redshift'\).version"
+            mangled_init_data = re.sub(
+                version_expr,
+                '"{}"'.format(dependency.version),
+                current_init_data,
+            )
+
+            register_expr = r"redshift\+psycopg2"
+            mangled_init_data = re.sub(
+                register_expr,
+                "redshift.psycopg2",
+                mangled_init_data,
+            )
+
+            fp.seek(0)
+            fp.truncate()
+            fp.write(mangled_init_data)
 
 
 def install_matching_precompiled_version(path, dependency, runtime):
@@ -439,7 +485,7 @@ def install_local_package_from_egg(path, dependency):
                 elif name == folder + ".py":
                     maybe_names_to_copy.append(name)
 
-            # filter our files to only keey what we want
+            # filter our files to only keep what we want
             names_to_copy = []
             for name in maybe_names_to_copy:
 
