@@ -296,15 +296,19 @@ def download_and_install_manylinux_version(path, dependency, runtime):
     # see if we can locate our version in the result
     data = res.json()
     version = dependency.version
-    wheel_suffix = _get_wheel_suffix(runtime)
+    wheel_suffixes = _get_wheel_suffixes(runtime)
     if version not in data["releases"]:
         return False
 
     # and see if we can find the right wheel
     url = None
-    for info in data["releases"][version]:
-        if info["url"].endswith(wheel_suffix):
-            url = info["url"]
+    for wheel_suffix in wheel_suffixes:
+        for info in data["releases"][version]:
+            if info["url"].endswith(wheel_suffix):
+                url = info["url"]
+                break
+
+        if url is not None:
             break
 
     # couldn't get the url, bail
@@ -330,13 +334,16 @@ def download_and_install_manylinux_version(path, dependency, runtime):
     return True
 
 
-def _get_wheel_suffix(runtime):
+def _get_wheel_suffixes(runtime):
     if runtime == "python2.7":
-        suffix = "cp27mu-manylinux1_x86_64.whl"
+        suffixes = ["cp27mu-manylinux1_x86_64.whl"]
     else:
-        suffix = "cp36m-manylinux1_x86_64.whl"
+        suffixes = [
+            "cp36m-manylinux1_x86_64.whl",
+            "cp34-abi3-manylinux1_x86_64.whl",
+        ]
 
-    return suffix
+    return suffixes
 
 
 def _install_cached_manylinux_version(cache_path, path, dependency, runtime):
@@ -349,16 +356,22 @@ def _install_cached_manylinux_version(cache_path, path, dependency, runtime):
     available_wheels = load_cached_wheels(cache_path)
 
     # determine the correct name for the wheel we want
-    suffix = _get_wheel_suffix(runtime)
+    suffixes = _get_wheel_suffixes(runtime)
 
-    wheel_name = "{}-{}-{}".format(
-        dependency.key,
-        dependency.version,
-        suffix,
-    )
+    wheel_name = None
+    for suffix in suffixes:
+        maybe_wheel_name = "{}-{}-{}".format(
+            dependency.key,
+            dependency.version,
+            suffix,
+        )
 
-    # see if it's a match
-    if wheel_name not in available_wheels:
+        # see if it's a match
+        if maybe_wheel_name in available_wheels:
+            wheel_name = maybe_wheel_name
+            break
+
+    if wheel_name is None:
         return False
 
     # unpack the cached wheel into our output
