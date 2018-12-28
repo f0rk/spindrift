@@ -112,6 +112,13 @@ def find_dependencies(type, package_name):
 
     requires = package.requires()
     for requirement in requires:
+
+        # if this requirement is conditional on the environment, skip it if we
+        # don't need it
+        if requirement.marker is not None:
+            if not requirement.marker.evaluate():
+                continue
+
         ret.extend(find_dependencies(type, requirement.key))
 
     return list(set(ret))
@@ -427,6 +434,11 @@ def install_local_package(path, dependency):
                     if not line:
                         continue
 
+                    # in a special case for pyyaml, skip the _yaml (which is
+                    # for the .so)
+                    if dependency.key == "pyyaml" and line == "_yaml":
+                        continue
+
                     to_copy.append(line)
 
         # copy each found folder into our output
@@ -530,6 +542,13 @@ def _locate_top_level(dependency):
         egg_info_path = os.path.join(
             dependency.location,
             dependency.key + ".egg-info",
+        )
+        paths_to_try.append(egg_info_path)
+
+        # could be a plain .egg-info folder on the egg name
+        egg_info_path = os.path.join(
+            dependency.location,
+            dependency.egg_name() + ".egg-info",
         )
         paths_to_try.append(egg_info_path)
 
