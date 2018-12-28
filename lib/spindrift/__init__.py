@@ -1,3 +1,3 @@
 # Copyright 2017-2018, Ryan P. Kelly.
 
-__version__ = "0.6"
+__version__ = "0.7"
