@@ -337,7 +337,7 @@ def _install_cached_manylinux_version(cache_path, path, dependency, runtime):
         )
 
         # see if it's a match
-        if maybe_wheel_name in available_wheels:
+        if maybe_wheel_name.lower() in available_wheels:
             wheel_name = maybe_wheel_name
             break
 
@@ -345,7 +345,7 @@ def _install_cached_manylinux_version(cache_path, path, dependency, runtime):
         return False
 
     # unpack the cached wheel into our output
-    wheel_path = available_wheels[wheel_name]
+    wheel_path = available_wheels[wheel_name.lower()]
 
     with zipfile.ZipFile(wheel_path) as zf:
         zf.extractall(path)
@@ -362,6 +362,7 @@ def load_cached_wheels(path):
         for file in files:
             if file.endswith(".whl"):
                 ret[file] = os.path.join(root, file)
+                ret[file.lower()] = os.path.join(root, file)
 
     return ret
 
