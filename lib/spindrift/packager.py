@@ -306,12 +306,12 @@ def download_and_install_manylinux_version(path, dependency, runtime, cache_path
 def _get_wheel_suffixes(runtime):
     if runtime == "python2.7":
         suffixes = [
-            "cp27mu-manylinux1_x86_64.whl",
+            "cp27-cp27mu-manylinux1_x86_64.whl",
             "py2.py3-none-any.whl",
         ]
     else:
         suffixes = [
-            "cp36m-manylinux1_x86_64.whl",
+            "cp36-cp36m-manylinux1_x86_64.whl",
             "cp34-abi3-manylinux1_x86_64.whl",
             "py2.py3-none-any.whl",
             "py3-none-any.whl",
