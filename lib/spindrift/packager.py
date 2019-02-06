@@ -1,4 +1,4 @@
-# Copyright 2017-2018, Ryan P. Kelly.
+# Copyright 2017-2019, Ryan P. Kelly.
 
 import fnmatch
 import os.path
@@ -27,7 +27,7 @@ IGNORED = [
 lambda_packages = {k.lower(): v for k, v in _lambda_packages.items()}
 
 
-def package(package, type, entry, runtime, destination):
+def package(package, type, entry, runtime, destination, download=True, cache_path=None):
     """Package up the given package.
 
     :param package: The name of the package to bundle up.
@@ -47,6 +47,12 @@ def package(package, type, entry, runtime, destination):
         `"python3.6"`.
     :param destination: A path on the file system to store the resulting file.
         No parent directories will be created, so you must ensure they exist.
+    :param download: When `True`, whether or not to request installable
+        manylinux wheels from pypi (default: `True`).
+    :param cache_path: A path on the filesystem storing any currently
+        downloaded wheels. Wheels will be used if found in cache. Any newly
+        downloaded wheels will be stored here. Default of `None` means to use a
+        temporary directory.
 
     """
 
@@ -64,16 +70,25 @@ def package(package, type, entry, runtime, destination):
             entry,
             runtime,
             dependencies,
+            download=download,
+            cache_path=cache_path,
         )
 
         # ...and create the archive
         output_archive(temp_path, destination)
 
 
-def populate_directory(path, package, type, entry, runtime, dependencies):
+def populate_directory(path, package, type, entry, runtime, dependencies, download=True, cache_path=None):
 
     # install our dependencies
-    install_dependencies(path, package, runtime, dependencies)
+    install_dependencies(
+        path,
+        package,
+        runtime,
+        dependencies,
+        download=download,
+        cache_path=cache_path,
+    )
 
     # install our project itself
     install_project(path, package)
@@ -124,7 +139,7 @@ def find_dependencies(type, package_name):
     return list(set(ret))
 
 
-def install_dependencies(path, package, runtime, dependencies):
+def install_dependencies(path, package, runtime, dependencies, download=True, cache_path=None):
 
     # for each dependency
     for dependency in dependencies:
@@ -145,16 +160,27 @@ def install_dependencies(path, package, runtime, dependencies):
             continue
 
         # if not, see if we've got a manylinux version
-        rv = install_manylinux_version(path, dependency, runtime)
+        rv = install_manylinux_version(
+            path,
+            dependency,
+            runtime,
+            cache_path=cache_path,
+        )
         if rv:
             _mangle_package(path, dependency)
             continue
 
         # maybe try downloading and installing a manylinux version?
-        rv = download_and_install_manylinux_version(path, dependency, runtime)
-        if rv:
-            _mangle_package(path, dependency)
-            continue
+        if download:
+            rv = download_and_install_manylinux_version(
+                path,
+                dependency,
+                runtime,
+                cache_path=cache_path,
+            )
+            if rv:
+                _mangle_package(path, dependency)
+                continue
 
         # still nothing? go for any precompiled-version
         rv = install_any_precompiled_version(path, dependency, runtime)
@@ -240,47 +266,36 @@ def _install_precompiled_version(path, dependency, runtime, check_version):
     return True
 
 
-def install_manylinux_version(path, dependency, runtime):
+def install_manylinux_version(path, dependency, runtime, cache_path=None):
 
-    # XXX: where is this directory on other systems?
-    wheel_cache_path = os.path.join(
-        os.path.expanduser("~"),
-        ".cache",
-        "pip",
-    )
+    if cache_path is None:
+        cache_path = _get_fake_cache_path()
 
     # sub out the rest of our work
     rv = _install_cached_manylinux_version(
-        wheel_cache_path,
+        cache_path,
         path,
         dependency,
         runtime,
     )
 
-    if not rv:
-        fake_cache_path = _get_fake_cache_path()
-        rv = _install_cached_manylinux_version(
-            fake_cache_path,
-            path,
-            dependency,
-            runtime,
-        )
-
     return rv
 
 
 def _get_fake_cache_path():
-    return os.path.join(tempfile.gettempdir(), "spindrift_cache")
+    cache_path = os.path.join(tempfile.gettempdir(), "spindrift_cache")
+
+    if not os.path.exists(cache_path):
+        os.makedirs(cache_path)
+
+    return cache_path
 
 
-def download_and_install_manylinux_version(path, dependency, runtime):
+def download_and_install_manylinux_version(path, dependency, runtime, cache_path=None):
 
-    # pip's wheel cache is kinda an implementation detail, so just create our
-    # cache dir for now
-    fake_cache_path = _get_fake_cache_path()
-
-    if not os.path.exists(fake_cache_path):
-        os.makedirs(fake_cache_path)
+    # create our own cache if there is no user specified one
+    if cache_path is None:
+        cache_path = _get_fake_cache_path()
 
     # get package info from pypi
     name = dependency.key
@@ -316,8 +331,8 @@ def download_and_install_manylinux_version(path, dependency, runtime):
         return False
 
     # figure out what to save this url as
-    wheel_name = "{}-{}-{}".format(name, version, wheel_suffix)
-    wheel_path = os.path.join(fake_cache_path, wheel_name)
+    wheel_name = os.path.basename(url)
+    wheel_path = os.path.join(cache_path, wheel_name)
 
     # download the discovered url into our ghetto cache
     with open(wheel_path, "wb") as fp:
@@ -336,21 +351,22 @@ def download_and_install_manylinux_version(path, dependency, runtime):
 
 def _get_wheel_suffixes(runtime):
     if runtime == "python2.7":
-        suffixes = ["cp27mu-manylinux1_x86_64.whl"]
+        suffixes = [
+            "cp27mu-manylinux1_x86_64.whl",
+            "py2.py3-none-any.whl",
+        ]
     else:
         suffixes = [
             "cp36m-manylinux1_x86_64.whl",
             "cp34-abi3-manylinux1_x86_64.whl",
+            "py2.py3-none-any.whl",
+            "py3-none-any.whl",
         ]
 
     return suffixes
 
 
 def _install_cached_manylinux_version(cache_path, path, dependency, runtime):
-
-    # no cache? punt
-    if not os.path.isdir(cache_path):
-        return False
 
     # get every known wheel out of the cache
     available_wheels = load_cached_wheels(cache_path)

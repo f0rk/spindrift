@@ -1,4 +1,4 @@
-# Copyright 2017-2018, Ryan P. Kelly.
+# Copyright 2017-2019, Ryan P. Kelly.
 
 import argparse
 import os.path
