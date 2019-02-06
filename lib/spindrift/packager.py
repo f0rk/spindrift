@@ -9,7 +9,6 @@ import tempfile
 import zipfile
 
 import requests
-from lambda_packages import lambda_packages as _lambda_packages
 
 import spindrift.compat
 
@@ -22,9 +21,6 @@ IGNORED = [
     "*/__pycache__/*",
     "*/.git/*",
 ]
-
-
-lambda_packages = {k.lower(): v for k, v in _lambda_packages.items()}
 
 
 def package(package, type, entry, runtime, destination, download=True, cache_path=None):
@@ -153,13 +149,7 @@ def install_dependencies(path, package, runtime, dependencies, download=True, ca
         # perform the requested operation, or true if they did. perform the
         # attempts in order, and skip the remaining options if we succeed.
 
-        # determine if we have a matching precompiled-version available
-        rv = install_matching_precompiled_version(path, dependency, runtime)
-        if rv:
-            _mangle_package(path, dependency)
-            continue
-
-        # if not, see if we've got a manylinux version
+        # see if we've got a manylinux version locally
         rv = install_manylinux_version(
             path,
             dependency,
@@ -181,12 +171,6 @@ def install_dependencies(path, package, runtime, dependencies, download=True, ca
             if rv:
                 _mangle_package(path, dependency)
                 continue
-
-        # still nothing? go for any precompiled-version
-        rv = install_any_precompiled_version(path, dependency, runtime)
-        if rv:
-            _mangle_package(path, dependency)
-            continue
 
         # if we get this far, use whatever package we have installed locally
         rv = install_local_package(path, dependency)
@@ -234,36 +218,6 @@ def _mangle_package(path, dependency):
             fp.seek(0)
             fp.truncate()
             fp.write(mangled_init_data)
-
-
-def install_matching_precompiled_version(path, dependency, runtime):
-    return _install_precompiled_version(path, dependency, runtime, True)
-
-
-def _install_precompiled_version(path, dependency, runtime, check_version):
-    name = dependency.key
-
-    # no matching package? False.
-    if name not in lambda_packages:
-        return False
-
-    # no version for this runtime
-    if runtime not in lambda_packages[name]:
-        return False
-
-    package = lambda_packages[name][runtime]
-
-    # check for the correct version
-    if check_version:
-        if package["version"] != dependency.version:
-            return False
-
-    tf = tarfile.open(package["path"], mode="r:gz")
-    for member in tf.getmembers():
-        tf.extract(member, path=path)
-
-    # yahtzee.
-    return True
 
 
 def install_manylinux_version(path, dependency, runtime, cache_path=None):
@@ -410,10 +364,6 @@ def load_cached_wheels(path):
                 ret[file] = os.path.join(root, file)
 
     return ret
-
-
-def install_any_precompiled_version(path, dependency, runtime):
-    return _install_precompiled_version(path, dependency, runtime, False)
 
 
 def install_local_package(path, dependency):
