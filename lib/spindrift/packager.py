@@ -1,16 +1,20 @@
 # Copyright 2017-2019, Ryan P. Kelly.
 
 import fnmatch
+import logging
 import os.path
 import re
 import shutil
-import tarfile
 import tempfile
 import zipfile
 
 import requests
 
 import spindrift.compat
+
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 
 IGNORED = [
@@ -76,6 +80,8 @@ def package(package, type, entry, runtime, destination, download=True, cache_pat
 
 def populate_directory(path, package, type, entry, runtime, dependencies, download=True, cache_path=None):
 
+    logger.info("[{}] populating output directory".format(package))
+
     # install our dependencies
     install_dependencies(
         path,
@@ -95,8 +101,12 @@ def populate_directory(path, package, type, entry, runtime, dependencies, downlo
     # insert our shim
     insert_shim(path, type, entry)
 
+    logger.info("[{}] done populating output directory".format(package))
+
 
 def output_archive(path, destination):
+
+    logger.info("outputting archive")
 
     # create a temporary file to zip into
     with tempfile.NamedTemporaryFile(suffix=".zip") as temp_file:
@@ -106,6 +116,8 @@ def output_archive(path, destination):
 
         # output our zip bundle to the given destination
         output_zip_bundle(temp_file.name, destination)
+
+    logger.info("done outputting archive")
 
 
 def find_dependencies(type, package_name):
@@ -137,6 +149,8 @@ def find_dependencies(type, package_name):
 
 def install_dependencies(path, package, runtime, dependencies, download=True, cache_path=None):
 
+    logger.info("[{}] installing dependencies".format(package))
+
     # for each dependency
     for dependency in dependencies:
 
@@ -157,6 +171,12 @@ def install_dependencies(path, package, runtime, dependencies, download=True, ca
             cache_path=cache_path,
         )
         if rv:
+
+            logger.info(
+                "[{}] installed {} via install_manylinux_version"
+                .format(package, dependency.key)
+            )
+
             _mangle_package(path, dependency)
             continue
 
@@ -169,17 +189,31 @@ def install_dependencies(path, package, runtime, dependencies, download=True, ca
                 cache_path=cache_path,
             )
             if rv:
+
+                logger.info(
+                    "[{}] installed {} via download_and_install_manylinux_version"
+                    .format(package, dependency.key)
+                )
+
                 _mangle_package(path, dependency)
                 continue
 
         # if we get this far, use whatever package we have installed locally
         rv = install_local_package(path, dependency)
         if rv:
+
+            logger.info(
+                "[{}] installed {} via install_local_package"
+                .format(package, dependency.key)
+            )
+
             _mangle_package(path, dependency)
             continue
 
         raise Exception("Unable to find suitable source for {}=={}"
                         .format(dependency.key, dependency.version))
+
+    logger.info("[{}] done installing dependencies".format(package))
 
 
 def _mangle_package(path, dependency):
@@ -577,11 +611,18 @@ def _locate_top_level(dependency):
 
 
 def install_project(path, name):
+
+    logger.info("[{}] installing project".format(name))
+
     import pip._vendor.pkg_resources
 
     package = pip._vendor.pkg_resources.working_set.by_key[name]
 
-    return install_local_package(path, package)
+    rv = install_local_package(path, package)
+
+    logger.info("[{}] done installing project".format(name))
+
+    return rv
 
 
 def prune_python_files(path):
