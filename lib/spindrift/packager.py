@@ -375,6 +375,17 @@ def _install_cached_manylinux_version(cache_path, path, dependency, runtime):
             wheel_name = maybe_wheel_name
             break
 
+        # try replacing - with _ as well
+        maybe_wheel_name = "{}-{}-{}".format(
+            dependency.key.replace("-", "_"),
+            dependency.version,
+            suffix,
+        )
+
+        if maybe_wheel_name.lower() in available_wheels:
+            wheel_name = maybe_wheel_name
+            break
+
     if wheel_name is None:
         return False
 
