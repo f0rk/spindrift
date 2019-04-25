@@ -27,7 +27,7 @@ IGNORED = [
 ]
 
 
-def package(package, type, entry, runtime, destination, download=True, cache_path=None):
+def package(package, type, entry, runtime, destination, download=True, cache_path=None, renamed_packages=None):
     """Package up the given package.
 
     :param package: The name of the package to bundle up.
@@ -53,11 +53,15 @@ def package(package, type, entry, runtime, destination, download=True, cache_pat
         downloaded wheels. Wheels will be used if found in cache. Any newly
         downloaded wheels will be stored here. Default of `None` means to use a
         temporary directory.
+    :param renamed_packages: Supply a function or a dictionary to rename a
+        package. For example, psycopg2 can be replaced with psycopg2-binary by
+        supplying a dictionary that maps to the new name. Additionally, mapping
+        to None will skip the package altogether.
 
     """
 
     # determine what our dependencies are
-    dependencies = find_dependencies(type, package)
+    dependencies = find_dependencies(type, package, renamed_packages)
 
     # create a temporary directory to start creating things in
     with spindrift.compat.TemporaryDirectory() as temp_path:
@@ -120,8 +124,19 @@ def output_archive(path, destination):
     logger.info("done outputting archive")
 
 
-def find_dependencies(type, package_name):
+def find_dependencies(type, package_name, renamed_packages):
     import pip._vendor.pkg_resources
+
+    if renamed_packages is not None:
+
+        if isinstance(renamed_packages, dict):
+            if package_name in renamed_packages:
+                package_name = renamed_packages[package_name]
+        elif callable(renamed_packages):
+            package_name = renamed_packages(package_name)
+
+    if package_name is None:
+        return []
 
     package = pip._vendor.pkg_resources.working_set.by_key[package_name]
 
@@ -142,7 +157,7 @@ def find_dependencies(type, package_name):
             if not requirement.marker.evaluate():
                 continue
 
-        ret.extend(find_dependencies(type, requirement.key))
+        ret.extend(find_dependencies(type, requirement.key, renamed_packages))
 
     return list(set(ret))
 
