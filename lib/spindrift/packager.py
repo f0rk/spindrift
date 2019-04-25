@@ -159,7 +159,7 @@ def find_dependencies(type, package_name, renamed_packages):
 
         ret.extend(find_dependencies(type, requirement.key, renamed_packages))
 
-    return list(set(ret))
+    return sorted(list(set(ret)))
 
 
 def install_dependencies(path, package, runtime, dependencies, download=True, cache_path=None):
