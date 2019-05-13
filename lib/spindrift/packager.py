@@ -6,6 +6,7 @@ import os.path
 import re
 import shutil
 import tempfile
+import warnings
 import zipfile
 
 import requests
@@ -27,7 +28,7 @@ IGNORED = [
 ]
 
 
-def package(package, type, entry, runtime, destination, download=True, cache_path=None, renamed_packages=None):
+def package(package, type, entry, runtime, destination, download=True, cache_path=None, renamed_packages=None, prefer_pyc=True):
     """Package up the given package.
 
     :param package: The name of the package to bundle up.
@@ -57,6 +58,9 @@ def package(package, type, entry, runtime, destination, download=True, cache_pat
         package. For example, psycopg2 can be replaced with psycopg2-binary by
         supplying a dictionary that maps to the new name. Additionally, mapping
         to None will skip the package altogether.
+    :param prefer_pyc: If `True`, remove any .py files that have a corresponding
+        .pyc to help save space. If `False`, remove the .pyc file and keep the
+        .py (default: `True`).
 
     """
 
@@ -76,13 +80,14 @@ def package(package, type, entry, runtime, destination, download=True, cache_pat
             dependencies,
             download=download,
             cache_path=cache_path,
+            prefer_pyc=prefer_pyc,
         )
 
         # ...and create the archive
         output_archive(temp_path, destination)
 
 
-def populate_directory(path, package, type, entry, runtime, dependencies, download=True, cache_path=None):
+def populate_directory(path, package, type, entry, runtime, dependencies, download=True, cache_path=None, prefer_pyc=True):
 
     logger.info("[{}] populating output directory".format(package))
 
@@ -100,7 +105,7 @@ def populate_directory(path, package, type, entry, runtime, dependencies, downlo
     install_project(path, package)
 
     # prune away any unused files
-    prune_python_files(path)
+    prune_python_files(path, prefer_pyc=prefer_pyc)
 
     # insert our shim
     insert_shim(path, type, entry)
@@ -353,18 +358,47 @@ def download_and_install_manylinux_version(path, dependency, runtime, cache_path
 
 
 def _get_wheel_suffixes(runtime):
-    if runtime == "python2.7":
-        suffixes = [
-            "cp27-cp27mu-manylinux1_x86_64.whl",
-            "py2.py3-none-any.whl",
-        ]
+
+    if not runtime.startswith("python2.") and not runtime.startswith("python3."):
+        raise ValueError(
+            "Runtime must start with 'python2.' or 'python3.' (got {!r})"
+            .format(runtime)
+        )
+
+    if runtime not in ("python2.7", "python3.6", "python3.7"):
+        warnings.warn(
+            "unknown runtime, packaging may fail (only 'python2.7', "
+            "'python3.6', and 'python3.7' are known). attemping to parse "
+            "version from runtime value {!r}"
+            .format(runtime),
+            Warning,
+        )
+
+    version = runtime.replace("python", "")
+    version = version.replace(".", "")
+
+    suffixes = [
+        "py2.py3-none-any.whl",
+    ]
+
+    if runtime.startswith("python2."):
+        suffixes.insert(
+            0,
+            "cp{version}-cp{version}mu-manylinux1_x86_64.whl".format(version=version),
+        )
     else:
-        suffixes = [
-            "cp36-cp36m-manylinux1_x86_64.whl",
-            "cp34-abi3-manylinux1_x86_64.whl",
-            "py2.py3-none-any.whl",
-            "py3-none-any.whl",
-        ]
+        suffixes.insert(
+            0,
+            "py{major_version}-none-any.whl".format(major_version=version[:1]),
+        )
+
+        if runtime.startswith("python3."):
+            suffixes.insert(0, "cp34-abi3-manylinux1_x86_64.whl")
+
+        suffixes.insert(
+            0,
+            "cp{version}-cp{version}m-manylinux1_x86_64.whl".format(version=version),
+        )
 
     return suffixes
 
@@ -477,6 +511,10 @@ def install_local_package(path, dependency):
                     # in a special case for pyyaml, skip the _yaml (which is
                     # for the .so)
                     if dependency.key == "pyyaml" and line == "_yaml":
+                        continue
+
+                    # similar case for cffi
+                    if dependency.key == "cffi" and line == "_cffi_backend":
                         continue
 
                     to_copy.append(line)
@@ -651,7 +689,7 @@ def install_project(path, name):
     return rv
 
 
-def prune_python_files(path):
+def prune_python_files(path, prefer_pyc=True):
 
     # collect all .py files and __pycache__ dirs
     py_files = []
@@ -674,9 +712,13 @@ def prune_python_files(path):
 
         pyc_file = py_file + "c"
 
-        # and delete them if they do
+        # if prefer_pyc is true, delete the corresponding .py file. otherwise,
+        # delete the .pyc file
         if os.path.exists(pyc_file):
-            os.unlink(py_file)
+            if prefer_pyc:
+                os.unlink(py_file)
+            else:
+                os.unlink(pyc_file)
 
 
 def insert_shim(path, type, entry):
