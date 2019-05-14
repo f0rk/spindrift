@@ -83,6 +83,7 @@ def package(package, type, entry, runtime, destination, download=True, cache_pat
             dependencies,
             download=download,
             cache_path=cache_path,
+            renamed_packages=renamed_packages,
             prefer_pyc=prefer_pyc,
         )
 
@@ -90,7 +91,7 @@ def package(package, type, entry, runtime, destination, download=True, cache_pat
         output_archive(temp_path, destination)
 
 
-def populate_directory(path, package, type, entry, runtime, dependencies, download=True, cache_path=None, prefer_pyc=True):
+def populate_directory(path, package, type, entry, runtime, dependencies, download=True, cache_path=None, renamed_packages=None, prefer_pyc=True):
 
     logger.info("[{}] populating output directory".format(package))
 
@@ -114,7 +115,7 @@ def populate_directory(path, package, type, entry, runtime, dependencies, downlo
     insert_shim(path, type, entry)
 
     # write out the requirements.txt file, if applicable
-    insert_requirements_txt(path, type, installed_dependencies)
+    insert_requirements_txt(path, type, renamed_packages, installed_dependencies)
 
     logger.info("[{}] done populating output directory".format(package))
 
@@ -804,7 +805,7 @@ def write_eb_shim(path, entry):
         fp.write(entry)
 
 
-def insert_requirements_txt(path, type, installed_dependencies):
+def insert_requirements_txt(path, type, renamed_packages, installed_dependencies):
     import pip._internal.utils.misc
 
     if type != "flask-eb-reqs":
@@ -821,8 +822,6 @@ def insert_requirements_txt(path, type, installed_dependencies):
     requirements_txt_path = os.path.join(path, "requirements.txt")
     with open(requirements_txt_path, "w") as fp:
 
-        items_to_write = []
-
         for _, deps_in_section in installed_dependencies.items():
 
             for dep in deps_in_section:
@@ -830,7 +829,17 @@ def insert_requirements_txt(path, type, installed_dependencies):
                 if dep in local_packages:
                     continue
 
-                fp.write("{}=={}\n".format(dep.key, dep.version))
+                package_name = dep.key
+
+                if renamed_packages is not None:
+
+                    if isinstance(renamed_packages, dict):
+                        if package_name in renamed_packages:
+                            package_name = renamed_packages[package_name]
+                    elif callable(renamed_packages):
+                        package_name = renamed_packages(package_name)
+
+                fp.write("{}=={}\n".format(package_name, dep.version))
 
 
 def create_zip_bundle(path, zip_path):
