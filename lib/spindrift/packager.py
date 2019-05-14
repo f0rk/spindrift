@@ -36,16 +36,19 @@ def package(package, type, entry, runtime, destination, download=True, cache_pat
         values are `"plain"`, which is for simple lambda functions written in
         the standard `handler(event, context)` style, and `"flask"` for flask
         applications. Use `"flask-eb"` for elastic beanstalk applications,
-        which must be flask applications.
+        which must be flask applications, and `"flask-eb-reqs"` for elastic
+        beanstalk applications, which must be flask applications, which should
+        also include a requirements.txt file.
     :param entry: A string describing the entrypoint of the application. For
         type `"plain"` applications, this should import the handler function
         itself and name it `handler`, i.e. `from yourplainapp.handlers import
         snake_handler as handler`.  For `"flask"` applications, this should
         import your application and call it `app`, i.e., `from yourwebapp.app
-        import api_app as app`. For `"flask-eb"` applications, this should
-        import your application and call it `application`.
-    :param runtime: The runtime to package for. Must be either `"python2.7"` or
-        `"python3.6"`.
+        import api_app as app`. For `"flask-eb"` or `"flask-eb-reqs"`
+        applications, this should import your application and call it
+        `application`.
+    :param runtime: The runtime to package for. Should be one of `"python2.7"`,
+        `"python3.6"`, or `"python3.7"`.
     :param destination: A path on the file system to store the resulting file.
         No parent directories will be created, so you must ensure they exist.
     :param download: When `True`, whether or not to request installable
@@ -92,7 +95,7 @@ def populate_directory(path, package, type, entry, runtime, dependencies, downlo
     logger.info("[{}] populating output directory".format(package))
 
     # install our dependencies
-    install_dependencies(
+    installed_dependencies = install_dependencies(
         path,
         package,
         runtime,
@@ -109,6 +112,9 @@ def populate_directory(path, package, type, entry, runtime, dependencies, downlo
 
     # insert our shim
     insert_shim(path, type, entry)
+
+    # write out the requirements.txt file, if applicable
+    insert_requirements_txt(path, type, installed_dependencies)
 
     logger.info("[{}] done populating output directory".format(package))
 
@@ -148,7 +154,7 @@ def find_dependencies(type, package_name, renamed_packages):
     # boto is available on lambda, don't repackage it
     # XXX: make this configurable?
     if package.key in ("boto3", "botocore"):
-        if type != "flask-eb":
+        if type not in ("flask-eb", "flask-eb-reqs"):
             return []
 
     ret = [package]
@@ -170,6 +176,10 @@ def find_dependencies(type, package_name, renamed_packages):
 def install_dependencies(path, package, runtime, dependencies, download=True, cache_path=None):
 
     logger.info("[{}] installing dependencies".format(package))
+
+    # we will return our dependencies, grouped by the method in which they were
+    # installed
+    installed_dependencies = {}
 
     # for each dependency
     for dependency in dependencies:
@@ -197,6 +207,9 @@ def install_dependencies(path, package, runtime, dependencies, download=True, ca
                 .format(package, dependency.key)
             )
 
+            installed_dependencies.setdefault("install_manylinux_version", [])
+            installed_dependencies["install_manylinux_version"].append(dependency)
+
             _mangle_package(path, dependency)
             continue
 
@@ -215,6 +228,9 @@ def install_dependencies(path, package, runtime, dependencies, download=True, ca
                     .format(package, dependency.key)
                 )
 
+                installed_dependencies.setdefault("download_and_install_manylinux_version", [])
+                installed_dependencies["download_and_install_manylinux_version"].append(dependency)
+
                 _mangle_package(path, dependency)
                 continue
 
@@ -227,6 +243,9 @@ def install_dependencies(path, package, runtime, dependencies, download=True, ca
                 .format(package, dependency.key)
             )
 
+            installed_dependencies.setdefault("install_local_package", [])
+            installed_dependencies["install_local_package"].append(dependency)
+
             _mangle_package(path, dependency)
             continue
 
@@ -234,6 +253,8 @@ def install_dependencies(path, package, runtime, dependencies, download=True, ca
                         .format(dependency.key, dependency.version))
 
     logger.info("[{}] done installing dependencies".format(package))
+
+    return installed_dependencies
 
 
 def _mangle_package(path, dependency):
@@ -728,7 +749,7 @@ def insert_shim(path, type, entry):
     elif type == "flask":
         install_flask_resources(path)
         write_flask_shim(path, entry)
-    elif type == "flask-eb":
+    elif type in ("flask-eb", "flask-eb-reqs"):
         write_eb_shim(path, entry)
 
 
@@ -781,6 +802,35 @@ def write_eb_shim(path, entry):
     index_path = os.path.join(path, "application.py")
     with open(index_path, "w") as fp:
         fp.write(entry)
+
+
+def insert_requirements_txt(path, type, installed_dependencies):
+    import pip._internal.utils.misc
+
+    if type != "flask-eb-reqs":
+        return
+
+    # determine which packages are local packages and exclude them. we assume
+    # that packages installed with setup.py develop (which are editable) are
+    # local packages to exclude from the requirements file.
+    local_packages = pip._internal.utils.misc.get_installed_distributions(
+        editables_only=True,
+        include_editables=True,
+    )
+
+    requirements_txt_path = os.path.join(path, "requirements.txt")
+    with open(requirements_txt_path, "w") as fp:
+
+        items_to_write = []
+
+        for _, deps_in_section in installed_dependencies.items():
+
+            for dep in deps_in_section:
+
+                if dep in local_packages:
+                    continue
+
+                fp.write("{}=={}\n".format(dep.key, dep.version))
 
 
 def create_zip_bundle(path, zip_path):
