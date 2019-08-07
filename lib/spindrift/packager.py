@@ -1,6 +1,7 @@
 # Copyright 2017-2019, Ryan P. Kelly.
 
 import fnmatch
+import io
 import logging
 import os.path
 import re
@@ -124,14 +125,28 @@ def output_archive(path, destination):
 
     logger.info("outputting archive")
 
-    # create a temporary file to zip into
-    with tempfile.NamedTemporaryFile(suffix=".zip") as temp_file:
+    is_a_file_object = (
+        isinstance(destination, io.RawIOBase)
+        or isinstance(destination, tempfile._TemporaryFileWrapper)
+    )
+
+    # if destination is already a file or file-like object, write to it directly
+    if is_a_file_object:
 
         # create our zip bundle
-        create_zip_bundle(path, temp_file.name)
+        create_zip_bundle(path, destination)
 
-        # output our zip bundle to the given destination
-        output_zip_bundle(temp_file.name, destination)
+    # otherwise, create a temporary file and write it
+    else:
+
+        # create a temporary file to zip into
+        with tempfile.NamedTemporaryFile(suffix=".zip") as temp_file:
+
+            # create our zip bundle
+            create_zip_bundle(path, temp_file.name)
+
+            # output our zip bundle to the given destination
+            output_zip_bundle(temp_file.name, destination)
 
     logger.info("done outputting archive")
 
@@ -844,7 +859,7 @@ def insert_requirements_txt(path, type, renamed_packages, installed_dependencies
 
 def create_zip_bundle(path, zip_path):
 
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+    with zipfile.ZipFile(zip_path, "a", zipfile.ZIP_DEFLATED) as zf:
         for root, _, files in os.walk(path):
             for file in files:
 

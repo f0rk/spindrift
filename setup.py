@@ -5,7 +5,7 @@ from setuptools import setup
 
 setup(
     name="spindrift",
-    version="1.7",
+    version="1.8",
     description="package python applications for AWS Lambda and AWS Elastic Beanstalk",
     author="Ryan P. Kelly",
     author_email="ryan@ryankelly.us",
@@ -25,7 +25,7 @@ setup(
     include_package_data=True,
     zip_safe=False,
     classifiers=[
-        "Development Status :: 4 - Beta",
+        "Development Status :: 5 - Production/Stable",
         "Environment :: Console",
         "Framework :: Flask",
         "Intended Audience :: Developers",
