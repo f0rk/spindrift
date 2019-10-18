@@ -29,7 +29,7 @@ IGNORED = [
 ]
 
 
-def package(package, type, entry, runtime, destination, download=True, cache_path=None, renamed_packages=None, prefer_pyc=True):
+def package(package, type, entry, runtime, destination, download=True, cache_path=None, renamed_packages=None, prefer_pyc=True, boto_handling="default"):
     """Package up the given package.
 
     :param package: The name of the package to bundle up.
@@ -65,11 +65,20 @@ def package(package, type, entry, runtime, destination, download=True, cache_pat
     :param prefer_pyc: If `True`, remove any .py files that have a corresponding
         .pyc to help save space. If `False`, remove the .pyc file and keep the
         .py (default: `True`).
+    :param boto_handling: If `"default"`, use spindrift's default behavior for
+        boto/botocore packaging, which is to include them in the output for
+        flask-eb or flask-eb-reqs and exclude from the output for other
+        packages. If `"include"`, always include.
 
     """
 
     # determine what our dependencies are
-    dependencies = find_dependencies(type, package, renamed_packages)
+    dependencies = find_dependencies(
+        type,
+        package,
+        renamed_packages,
+        boto_handling=boto_handling,
+    )
 
     # create a temporary directory to start creating things in
     with spindrift.compat.TemporaryDirectory() as temp_path:
@@ -151,7 +160,7 @@ def output_archive(path, destination):
     logger.info("done outputting archive")
 
 
-def find_dependencies(type, package_name, renamed_packages):
+def find_dependencies(type, package_name, renamed_packages, boto_handling="default"):
     import pip._vendor.pkg_resources
 
     if renamed_packages is not None:
@@ -167,9 +176,8 @@ def find_dependencies(type, package_name, renamed_packages):
 
     package = pip._vendor.pkg_resources.working_set.by_key[package_name]
 
-    # boto is available on lambda, don't repackage it
-    # XXX: make this configurable?
-    if package.key in ("boto3", "botocore"):
+    # boto is available on lambda, don't always repackage it
+    if package.key in ("boto3", "botocore") and boto_handling == "default":
         if type not in ("flask-eb", "flask-eb-reqs"):
             return []
 
@@ -184,7 +192,14 @@ def find_dependencies(type, package_name, renamed_packages):
             if not requirement.marker.evaluate():
                 continue
 
-        ret.extend(find_dependencies(type, requirement.key, renamed_packages))
+        ret.extend(
+            find_dependencies(
+                type,
+                requirement.key,
+                renamed_packages,
+                boto_handling=boto_handling,
+            ),
+        )
 
     return sorted(list(set(ret)))
 
