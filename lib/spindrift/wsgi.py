@@ -18,6 +18,7 @@ def handler(app, event, context):
     # override some lambda specifics
     environ["HTTPS"] = "on"
     environ["wsgi.url_scheme"] = "https"
+    environ["lambda.event"] = event
     environ["lambda.context"] = context
 
     # create a response
