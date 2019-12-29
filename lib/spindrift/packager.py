@@ -529,7 +529,11 @@ def install_local_package(path, dependency):
             dependency.egg_name() + ".egg",
         )
         if os.path.isfile(egg_zip_path):
-            return install_local_package_from_egg(path, dependency)
+            return install_local_package_from_egg(
+                path,
+                dependency,
+                egg_path=egg_zip_path,
+            )
 
         to_copy = []
 
@@ -601,9 +605,12 @@ def install_local_package(path, dependency):
     return True
 
 
-def install_local_package_from_egg(path, dependency):
+def install_local_package_from_egg(path, dependency, egg_path=None):
 
-    with zipfile.ZipFile(dependency.location) as zf:
+    if egg_path is None:
+        egg_path = dependency.location
+
+    with zipfile.ZipFile(egg_path) as zf:
         data = zf.read("EGG-INFO/top_level.txt")
         data = data.decode("utf-8")
 
