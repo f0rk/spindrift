@@ -439,39 +439,30 @@ def _get_wheel_suffixes(runtime):
     version = runtime.replace("python", "")
     version = version.replace(".", "")
 
-    suffixes = [
-        "py2.py3-none-any.whl",
-    ]
+    suffixes = []
 
     if runtime.startswith("python2."):
-        suffixes.insert(
-            0,
-            "cp{version}-cp{version}mu-manylinux1_x86_64.whl".format(version=version),
-        )
-
-        suffixes.insert(
-            0,
+        suffixes.extend([
             "cp{version}-cp{version}mu-manylinux2010_x86_64.whl".format(version=version),
-        )
+            "cp{version}-cp{version}mu-manylinux1_x86_64.whl".format(version=version),
+        ])
     else:
-        suffixes.insert(
-            0,
-            "py{major_version}-none-any.whl".format(major_version=version[:1]),
-        )
-
-        if runtime.startswith("python3."):
-            suffixes.insert(0, "cp34-abi3-manylinux1_x86_64.whl")
-            suffixes.insert(0, "cp34-abi3-manylinux2010_x86_64.whl")
-
-        suffixes.insert(
-            0,
-            "cp{version}-cp{version}m-manylinux1_x86_64.whl".format(version=version),
-        )
-
-        suffixes.insert(
-            0,
+        suffixes.extend([
             "cp{version}-cp{version}m-manylinux2010_x86_64.whl".format(version=version),
-        )
+            "cp{version}-cp{version}-manylinux2010_x86_64.whl".format(version=version),
+            "cp{version}-cp{version}m-manylinux1_x86_64.whl".format(version=version),
+            "cp{version}-cp{version}-manylinux1_x86_64.whl".format(version=version),
+            "cp{version}-abi3-manylinux2010_x86_64.whl".format(version=version),
+            "cp{version}-abi3-manylinux1_x86_64.whl".format(version=version),
+            "cp34-abi3-manylinux1_x86_64.whl",
+            "cp34-abi3-manylinux2010_x86_64.whl",
+
+        ])
+
+    suffixes.extend([
+        "py{major_version}-none-any.whl".format(major_version=version[:1]),
+        "py2.py3-none-any.whl",
+    ])
 
     return suffixes
 
