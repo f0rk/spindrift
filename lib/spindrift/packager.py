@@ -417,12 +417,22 @@ def _get_wheel_suffixes(runtime):
             .format(runtime)
         )
 
-    if runtime not in ("python2.7", "python3.6", "python3.7"):
+    available_runtimes = [
+        "python2.7",
+        "python3.6",
+        "python3.7",
+        "python3.8",
+        "python3.9",
+    ]
+
+    if runtime not in available_runtimes:
+
+        available_runtimes_str = ", ".join(available_runtimes)
+
         warnings.warn(
-            "unknown runtime, packaging may fail (only 'python2.7', "
-            "'python3.6', and 'python3.7' are known). attemping to parse "
-            "version from runtime value {!r}"
-            .format(runtime),
+            "unknown runtime, packaging may fail (only {} are known)."
+            "attemping to parse version from runtime value {!r}"
+            .format(available_runtimes_str, runtime),
             Warning,
         )
 
@@ -438,6 +448,11 @@ def _get_wheel_suffixes(runtime):
             0,
             "cp{version}-cp{version}mu-manylinux1_x86_64.whl".format(version=version),
         )
+
+        suffixes.insert(
+            0,
+            "cp{version}-cp{version}mu-manylinux2010_x86_64.whl".format(version=version),
+        )
     else:
         suffixes.insert(
             0,
@@ -446,10 +461,16 @@ def _get_wheel_suffixes(runtime):
 
         if runtime.startswith("python3."):
             suffixes.insert(0, "cp34-abi3-manylinux1_x86_64.whl")
+            suffixes.insert(0, "cp34-abi3-manylinux2010_x86_64.whl")
 
         suffixes.insert(
             0,
             "cp{version}-cp{version}m-manylinux1_x86_64.whl".format(version=version),
+        )
+
+        suffixes.insert(
+            0,
+            "cp{version}-cp{version}m-manylinux2010_x86_64.whl".format(version=version),
         )
 
     return suffixes
@@ -831,6 +852,13 @@ def write_flask_shim(path, entry):
     with open(index_path, "w") as fp:
         fp.write("import spindrift.wsgi\n")
         fp.write(entry)
+        #fp.write("import sys\n")
+        #fp.write("import logging\n")
+        #fp.write("ch = logging.StreamHandler(sys.stdout)\n")
+        #fp.write("ch.setLevel(logging.DEBUG)\n")
+        #fp.write("formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')\n")
+        #fp.write("ch.setFormatter(formatter)\n")
+        #fp.write("logging.getLogger().addHandler(ch)\n")
         fp.write("\n")
         fp.write("def handler(event, context):\n")
         fp.write("    return spindrift.wsgi.handler(app, event, context)\n")

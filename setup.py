@@ -1,11 +1,11 @@
-# Copyright 2017-2019, Ryan P. Kelly.
+# Copyright 2017-2020, Ryan P. Kelly.
 
 from setuptools import setup
 
 
 setup(
     name="spindrift",
-    version="2.1",
+    version="2.2",
     description="package python applications for AWS Lambda, AWS Elastic Beanstalk, AWS Batch (Docker)",
     author="Ryan P. Kelly",
     author_email="ryan@ryankelly.us",
