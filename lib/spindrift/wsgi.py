@@ -68,7 +68,7 @@ def create_wsgi_environ(event):
 
     # fixup headers
     headers = event["headers"] or {}
-    for header in headers:
+    for header in list(headers.keys()):
         canonical = header.title()
         if header != canonical:
             headers[canonical] = headers.pop(header)
