@@ -585,6 +585,12 @@ def install_local_package(path, dependency):
                     if dependency.key == "cffi" and line == "_cffi_backend":
                         continue
 
+                    # similar cases for cryptography
+                    if dependency.key == "cryptography" and line == "_openssl":
+                        continue
+                    if dependency.key == "cryptography" and line == "_padding":
+                        continue
+
                     to_copy.append(line)
 
         # copy each found folder into our output
