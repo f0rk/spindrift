@@ -29,7 +29,18 @@ IGNORED = [
 ]
 
 
-def package(package, type, entry, runtime, destination, download=True, cache_path=None, renamed_packages=None, prefer_pyc=True, boto_handling="default"):
+def package(
+        package,
+        type,
+        entry,
+        runtime,
+        destination,
+        download=True,
+        cache_path=None,
+        renamed_packages=None,
+        prefer_pyc=True,
+        boto_handling="default",
+        extra_packages=None):
     """Package up the given package.
 
     :param package: The name of the package to bundle up.
@@ -69,16 +80,28 @@ def package(package, type, entry, runtime, destination, download=True, cache_pat
         boto/botocore packaging, which is to include them in the output for
         flask-eb or flask-eb-reqs and exclude from the output for other
         packages. If `"include"`, always include.
+    :param extra_packages: Extra packages to install, if any.
 
     """
 
+    dependency_packages = [package]
+    if extra_packages is not None:
+        dependency_packages.extend(extra_packages)
+
+    dependencies = []
+
     # determine what our dependencies are
-    dependencies = find_dependencies(
-        type,
-        package,
-        renamed_packages,
-        boto_handling=boto_handling,
-    )
+    for dependency_package in dependency_packages:
+        dependencies_for_package = find_dependencies(
+            type,
+            dependency_package,
+            renamed_packages,
+            boto_handling=boto_handling,
+        )
+
+        dependencies.extend(dependencies_for_package)
+
+    dependencies = sorted(list(set(dependencies)))
 
     # create a temporary directory to start creating things in
     with spindrift.compat.TemporaryDirectory() as temp_path:
@@ -917,6 +940,7 @@ def create_zip_bundle(path, zip_path):
 
                 # create a zip info object...
                 zi = zipfile.ZipInfo(truncated)
+                zi.compress_type = zipfile.ZIP_DEFLATED
 
                 # ensure our files are readable
                 # XXX: seems like a hack...

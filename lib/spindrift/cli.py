@@ -52,11 +52,20 @@ class App(object):
         )
 
         parser.add_argument(
+            "--extra-package",
+            help=("any extra packages to install. use multiple times to "
+                  "specify multiple packages."),
+            action="append",
+        )
+
+        parser.add_argument(
             "--output-path",
             help="where to output the resulting zip file",
         )
 
         args = parser.parse_args()
+
+        print(args.extra_package)
 
         settings = {}
 
@@ -102,6 +111,7 @@ class App(object):
                 settings["package"]["entry"],
                 settings["package"]["runtime"],
                 settings["output"]["path"],
+                extra_packages=args.extra_package,
             )
         else:
             raise Exception("Implementation Error")
