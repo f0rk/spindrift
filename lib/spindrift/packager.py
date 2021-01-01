@@ -2,10 +2,12 @@
 
 import fnmatch
 import io
+import glob
 import logging
 import os.path
 import re
 import shutil
+import subprocess
 import tempfile
 import warnings
 import zipfile
@@ -571,6 +573,8 @@ def install_local_package(path, dependency):
             )
 
         to_copy = []
+        to_find = []
+        shared_objects = []
 
         top_level_path = _locate_top_level(dependency)
         if not top_level_path:
@@ -616,6 +620,25 @@ def install_local_package(path, dependency):
 
                     to_copy.append(line)
 
+                    if dependency.key == "xmlsec" and line == "xmlsec":
+                        to_find.append("xmlsec.*.so")
+                        shared_objects.extend([
+                            "libxmlsec1-openssl.so.1",
+                            "libxmlsec1.so.1",
+                            "libxml2.so.2",
+                            "libcrypto.so.1.1",
+                            "libxslt.so.1",
+                            "libicuuc.so.60",
+                            "libicudata.so.60",
+                        ])
+
+        # locate any findables
+        for item in to_find:
+            source = os.path.join(dependency.location, item)
+            for found_path in glob.glob(source):
+                found_filename = found_path[len(dependency.location) + 1:]
+                to_copy.append(found_filename)
+
         # copy each found folder into our output
         for folder in to_copy:
 
@@ -637,6 +660,61 @@ def install_local_package(path, dependency):
                     destination,
                     ignore=shutil.ignore_patterns(*IGNORED),
                 )
+
+        if shared_objects:
+
+            ldconfig_process = subprocess.Popen(
+                [
+                    "ldconfig",
+                    "-v",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+            )
+
+            ld_library_paths = []
+
+            for line in ldconfig_process.stdout:
+
+                line = line.decode("utf-8")
+
+                if line.startswith("\t"):
+                    continue
+
+                ld_library_path = line.strip()
+                ld_library_path = ld_library_path.strip(":")
+
+                ld_library_paths.append(ld_library_path)
+
+            ldconfig_process.communicate()
+
+            for shared_object in shared_objects:
+
+                if not ld_library_paths:
+                    raise Exception(
+                        "shared libraries required but ld_library_paths is empty"
+                    )
+
+                found_shared_object = False
+
+                for ld_library_path in ld_library_paths:
+                    maybe_library_path = os.path.join(
+                        ld_library_path,
+                        shared_object,
+                    )
+
+                    if os.path.exists(maybe_library_path):
+                        output_path = os.path.join(path, shared_object)
+                        shutil.copyfile(maybe_library_path, output_path)
+
+                        found_shared_object = True
+                        break
+
+                if not found_shared_object:
+                    raise Exception(
+                        "unable to find shared object {}"
+                        .format(shared_object)
+                    )
 
     else:
         raise Exception("Unable to install local package for {}, neither a "

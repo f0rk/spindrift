@@ -65,8 +65,6 @@ class App(object):
 
         args = parser.parse_args()
 
-        print(args.extra_package)
-
         settings = {}
 
         # figure out how to open our settings file, if we're using one
@@ -80,7 +78,7 @@ class App(object):
 
         if settings_path is not None:
             with open(settings_path) as fp:
-                settings.update(yaml.load(fp))
+                settings.update(yaml.safe_load(fp))
 
         other_arguments = {
             "package": {
