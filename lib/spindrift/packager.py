@@ -1,4 +1,4 @@
-# Copyright 2017-2019, Ryan P. Kelly.
+# Copyright 2017-2021, Ryan P. Kelly.
 
 import fnmatch
 import io
@@ -245,72 +245,88 @@ def install_dependencies(path, package, runtime, dependencies, download=True, ca
         if dependency.key == package:
             continue
 
-        # each of the functions below will return false if they couldn't
-        # perform the requested operation, or true if they did. perform the
-        # attempts in order, and skip the remaining options if we succeed.
+        method = install_dependency(
+            path,
+            package,
+            runtime,
+            dependency,
+            download=download,
+            cache_path=cache_path,
+        )
 
-        # see if we've got a manylinux version locally
-        rv = install_manylinux_version(
+        installed_dependencies.setdefault(method, [])
+        installed_dependencies[method].append(dependency)
+
+    logger.info("[{}] done installing dependencies".format(package))
+
+    return installed_dependencies
+
+
+def install_dependency(path, package, runtime, dependency, download=True, cache_path=None):
+    logger.info("[{}] installing {}".format(package, dependency.key))
+    return _install_dependency(
+        path,
+        package,
+        runtime,
+        dependency,
+        download=download,
+        cache_path=cache_path,
+    )
+
+
+def _install_dependency(path, package, runtime, dependency, download=True, cache_path=None):
+
+    # each of the functions below will return false if they couldn't
+    # perform the requested operation, or true if they did. perform the
+    # attempts in order, and skip the remaining options if we succeed.
+
+    # see if we've got a manylinux version locally
+    rv = install_manylinux_version(
+        path,
+        dependency,
+        runtime,
+        cache_path=cache_path,
+    )
+    if rv:
+        logger.info(
+            "[{}] installed {} via install_manylinux_version"
+            .format(package, dependency.key)
+        )
+
+        _mangle_package(path, dependency)
+        return "install_manylinux_version"
+
+    # maybe try downloading and installing a manylinux version?
+    if download:
+        rv = download_and_install_manylinux_version(
             path,
             dependency,
             runtime,
             cache_path=cache_path,
         )
         if rv:
-
             logger.info(
-                "[{}] installed {} via install_manylinux_version"
+                "[{}] installed {} via download_and_install_manylinux_version"
                 .format(package, dependency.key)
             )
 
-            installed_dependencies.setdefault("install_manylinux_version", [])
-            installed_dependencies["install_manylinux_version"].append(dependency)
-
             _mangle_package(path, dependency)
-            continue
+            return "download_and_install_manylinux_version"
 
-        # maybe try downloading and installing a manylinux version?
-        if download:
-            rv = download_and_install_manylinux_version(
-                path,
-                dependency,
-                runtime,
-                cache_path=cache_path,
-            )
-            if rv:
+    # if we get this far, use whatever package we have installed locally
+    rv = install_local_package(path, dependency)
+    if rv:
 
-                logger.info(
-                    "[{}] installed {} via download_and_install_manylinux_version"
-                    .format(package, dependency.key)
-                )
+        logger.info(
+            "[{}] installed {} via install_local_package"
+            .format(package, dependency.key)
+        )
 
-                installed_dependencies.setdefault("download_and_install_manylinux_version", [])
-                installed_dependencies["download_and_install_manylinux_version"].append(dependency)
+        _mangle_package(path, dependency)
+        return "install_local_package"
 
-                _mangle_package(path, dependency)
-                continue
-
-        # if we get this far, use whatever package we have installed locally
-        rv = install_local_package(path, dependency)
-        if rv:
-
-            logger.info(
-                "[{}] installed {} via install_local_package"
-                .format(package, dependency.key)
-            )
-
-            installed_dependencies.setdefault("install_local_package", [])
-            installed_dependencies["install_local_package"].append(dependency)
-
-            _mangle_package(path, dependency)
-            continue
-
-        raise Exception("Unable to find suitable source for {}=={}"
-                        .format(dependency.key, dependency.version))
-
-    logger.info("[{}] done installing dependencies".format(package))
-
-    return installed_dependencies
+    raise Exception("Unable to find suitable source for {}=={}"
+                    .format(dependency.key, dependency.version))
 
 
 def _mangle_package(path, dependency):
