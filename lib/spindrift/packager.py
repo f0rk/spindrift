@@ -634,6 +634,10 @@ def install_local_package(path, dependency):
                     if dependency.key == "cryptography" and line == "_padding":
                         continue
 
+                    # python packaging makes no sense, case in point: setuptools
+                    if dependency.key == "setuptools" and line == "dist":
+                        continue
+
                     to_copy.append(line)
 
                     if dependency.key == "xmlsec" and line == "xmlsec":
