@@ -643,13 +643,13 @@ def install_local_package(path, dependency):
                     if dependency.key == "xmlsec" and line == "xmlsec":
                         to_find.append("xmlsec.*.so")
                         shared_objects.extend([
-                            "libxmlsec1-openssl.so.1",
-                            "libxmlsec1.so.1",
-                            "libxml2.so.2",
-                            "libcrypto.so.1.1",
-                            "libxslt.so.1",
-                            "libicuuc.so.60",
-                            "libicudata.so.60",
+                            "libxmlsec1-openssl.so",
+                            "libxmlsec1.so",
+                            "libxml2.so",
+                            "libcrypto.so",
+                            "libxslt.so",
+                            "libicuuc.so",
+                            "libicudata.so",
                         ])
 
         # locate any findables
@@ -725,7 +725,7 @@ def install_local_package(path, dependency):
 
                     if os.path.exists(maybe_library_path):
                         output_path = os.path.join(path, shared_object)
-                        shutil.copyfile(maybe_library_path, output_path)
+                        shutil.copyfile(maybe_library_path, output_path,follow_symlinks=True)
 
                         found_shared_object = True
                         break
