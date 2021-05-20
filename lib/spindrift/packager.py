@@ -634,6 +634,10 @@ def install_local_package(path, dependency):
                     if dependency.key == "cryptography" and line == "_padding":
                         continue
 
+                    # similar case for pyrsistent's pvectorc
+                    if dependency.key == "pyrsistent" and line == "pvectorc":
+                        continue
+
                     # python packaging makes no sense, case in point: setuptools
                     if dependency.key == "setuptools" and line == "dist":
                         continue
