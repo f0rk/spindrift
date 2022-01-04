@@ -655,6 +655,11 @@ def install_local_package(path, dependency):
                             "libicuuc.so",
                             "libicudata.so",
                         ])
+                    
+                    if dependency.key == "python-magic":
+                        shared_objects.extend([
+                            "libmagic.so.1",
+                        ])
 
         # locate any findables
         for item in to_find:
