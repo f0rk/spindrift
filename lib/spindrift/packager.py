@@ -655,7 +655,7 @@ def install_local_package(path, dependency):
                             "libicuuc.so",
                             "libicudata.so",
                         ])
-                    
+
                     if dependency.key == "python-magic":
                         shared_objects.extend([
                             "libmagic.so.1",
@@ -717,7 +717,18 @@ def install_local_package(path, dependency):
 
             ldconfig_process.communicate()
 
+            shared_objects = find_shared_objects(
+                shared_objects,
+                ld_library_paths,
+                ignored_dependencies=[
+                    "libc.so",
+                    "libz.so",
+                ],
+            )
+
             for shared_object in shared_objects:
+
+                logger.info("from {} including shared object {}".format(dependency.key, shared_object))
 
                 if not ld_library_paths:
                     raise Exception(
@@ -751,6 +762,131 @@ def install_local_package(path, dependency):
 
     # success
     return True
+
+
+def find_shared_objects(shared_objects, ld_library_paths, ignored_dependencies=None):
+
+    ret = []
+
+    for shared_object in shared_objects:
+
+        ret.append(shared_object)
+
+        dependencies = find_shared_object_dependencies(
+            shared_object,
+            ld_library_paths,
+            ignored_dependencies=ignored_dependencies,
+        )
+
+        ret.extend(
+            find_shared_objects(
+                dependencies,
+                ld_library_paths,
+                ignored_dependencies=ignored_dependencies,
+            )
+        )
+
+    return sorted(list(set(ret)))
+
+
+def find_shared_object_dependencies(shared_object, ld_library_paths, ignored_dependencies=None):
+
+    for ld_library_path in ld_library_paths:
+        maybe_library_path = os.path.join(
+            ld_library_path,
+            shared_object,
+        )
+
+        if os.path.exists(maybe_library_path):
+            elf_data = readelf(maybe_library_path)
+
+            dependencies = get_dependencies_from_elf_data(elf_data)
+
+            if ignored_dependencies is not None:
+                filtered_dependencies = []
+                for dependency in dependencies:
+
+                    is_ignored = False
+                    for ignored_dependency in ignored_dependencies:
+                        if dependency.startswith(ignored_dependency):
+                            is_ignored = True
+                            break
+
+                    if is_ignored:
+                        continue
+
+                    filtered_dependencies.append(dependency)
+
+                dependencies = filtered_dependencies
+
+            return dependencies
+
+    return []
+
+
+def readelf(library_path):
+
+    readelf_process = subprocess.Popen(
+        [
+            "readelf",
+            "-d",
+            library_path,
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
+
+    elf_data = []
+
+    for line in readelf_process.stdout:
+
+        line = line.decode("utf-8")
+
+        elf_line = line.strip()
+
+        elf_data.append(elf_line)
+
+    readelf_process.communicate()
+
+    return elf_data
+
+
+def get_dependencies_from_elf_data(elf_data):
+
+    dependencies = []
+
+    for line in elf_data:
+        if line.startswith("0x0000000000000001"):
+
+            _, _, value = parse_elf_dependency_line(line)
+
+            if not value.startswith("Shared library:"):
+                raise ValueError(
+                    "unexpected value {!r} while processing elf depedency data "
+                    "{!r}"
+                    .format(value, line)
+                )
+
+            library = value[len("Shared library: "):]
+            library = library.strip("[")
+            library = library.strip("]")
+
+            dependencies.append(library)
+
+    return dependencies
+
+
+def parse_elf_dependency_line(line):
+    match = re.search(r'^(0x[0-9a-f]+)\s+[(](\w+)[)]\s+(.+$)$', line)
+
+    if not match:
+        return None, None, None
+
+    return (
+        match.groups()[0],
+        match.groups()[1],
+        match.groups()[2],
+    )
 
 
 def install_local_package_from_egg(path, dependency, egg_path=None):
