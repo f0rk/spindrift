@@ -723,6 +723,7 @@ def install_local_package(path, dependency):
                 ignored_dependencies=[
                     "libc.so",
                     "libz.so",
+                    "ld-linux-x86-64.so",
                 ],
             )
 
