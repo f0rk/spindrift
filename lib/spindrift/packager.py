@@ -642,6 +642,11 @@ def install_local_package(path, dependency):
                     if dependency.key == "setuptools" and line == "dist":
                         continue
 
+                    # avoid a situation like:
+                    # ['websockets', 'websockets/extensions', 'websockets/legacy']
+                    if _is_path_common_to_any(line, to_copy):
+                        continue
+
                     to_copy.append(line)
 
                     if dependency.key == "xmlsec" and line == "xmlsec":
@@ -1016,6 +1021,26 @@ def _locate_top_level(dependency):
 
     # uh oh
     return None
+
+
+def _is_path_common_to_any(path, parents):
+    """Return true if path is the subpath of any path in parents."""
+
+    is_child = False
+
+    if len(parents) > 0:
+
+        # use 'join' to force append a trailing '/'
+        current_path_abs = os.path.join(os.path.realpath(path), "")
+
+        for parent_path in parents:
+            parent_path_abs = os.path.realpath(parent_path)
+
+            if os.path.commonprefix([current_path_abs, parent_path_abs]) == parent_path_abs:
+                is_child = True
+                break
+
+    return is_child
 
 
 def install_project(path, name):
