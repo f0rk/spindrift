@@ -644,10 +644,8 @@ def install_local_package(path, dependency):
 
                     # avoid a situation like:
                     # ['websockets', 'websockets/extensions', 'websockets/legacy']
-                    if _is_path_common_to_any(line, to_copy):
-                        continue
-
-                    to_copy.append(line)
+                    if not _is_path_common_to_any(line, to_copy):
+                        to_copy.append(line)
 
                     if dependency.key == "xmlsec" and line == "xmlsec":
                         to_find.append("xmlsec.*.so")
