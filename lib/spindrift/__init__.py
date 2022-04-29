@@ -1,3 +1,3 @@
-# Copyright 2017-2021, Ryan P. Kelly.
+# Copyright 2017-2022, Ryan P. Kelly.
 
-__version__ = "3.4"
+__version__ = "3.5"
