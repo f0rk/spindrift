@@ -593,6 +593,14 @@ def install_local_package(path, dependency):
         to_find = []
         shared_objects = []
 
+        # XXX: never include these and assume the execution environment includes
+        # them
+        ignored_shared_objects = [
+            "libc.so",
+            "libz.so",
+            "ld-linux-x86-64.so",
+        ]
+
         top_level_path = _locate_top_level(dependency)
         if not top_level_path:
 
@@ -629,12 +637,24 @@ def install_local_package(path, dependency):
                     if dependency.key == "cffi" and line == "_cffi_backend":
                         continue
 
-                    # similar cases for cryptography
-                    if dependency.key == "cryptography" and line in ("_openssl", "_padding"):
+                    if dependency.key == "cryptography":
 
-                        for found_path in pathlib.Path(dependency.location).rglob(line + ".*.so"):
+                        module_path = pathlib.Path(dependency.location)
+
+                        for found_path in module_path.rglob(line + ".*.so"):
                             elf_data = readelf(found_path.as_posix())
-                            shared_objects.extend(get_dependencies_from_elf_data(elf_data))
+
+                            elf_dependencies = get_dependencies_from_elf_data(elf_data)
+
+                            for elf_dependency in elf_dependencies:
+                                is_ignored = is_ignored_shared_object(
+                                    elf_dependency,
+                                    ignored_shared_objects,
+                                )
+                                if is_ignored:
+                                    continue
+
+                                shared_objects.append(elf_dependency)
 
                         shared_objects.extend([
                             "libxmlsec1.so",
@@ -642,6 +662,8 @@ def install_local_package(path, dependency):
                             "libexslt.so.0",
                         ])
 
+                    # similar cases for cryptography
+                    if dependency.key == "cryptography" and line in ("_openssl", "_padding"):
                         continue
 
                     # similar case for pyrsistent's pvectorc
@@ -733,11 +755,7 @@ def install_local_package(path, dependency):
             shared_objects = find_shared_objects(
                 shared_objects,
                 ld_library_paths,
-                ignored_dependencies=[
-                    "libc.so",
-                    "libz.so",
-                    "ld-linux-x86-64.so",
-                ],
+                ignored_dependencies=ignored_shared_objects,
             )
 
             for shared_object in shared_objects:
@@ -820,12 +838,10 @@ def find_shared_object_dependencies(shared_object, ld_library_paths, ignored_dep
                 filtered_dependencies = []
                 for dependency in dependencies:
 
-                    is_ignored = False
-                    for ignored_dependency in ignored_dependencies:
-                        if dependency.startswith(ignored_dependency):
-                            is_ignored = True
-                            break
-
+                    is_ignored = is_ignored_shared_object(
+                        dependency,
+                        ignored_dependencies,
+                    )
                     if is_ignored:
                         continue
 
@@ -836,6 +852,17 @@ def find_shared_object_dependencies(shared_object, ld_library_paths, ignored_dep
             return dependencies
 
     return []
+
+
+def is_ignored_shared_object(dependency, ignored_dependencies):
+    if ignored_dependencies is None:
+        return False
+
+    for ignored_dependency in ignored_dependencies:
+        if dependency.startswith(ignored_dependency):
+            return True
+
+    return False
 
 
 def readelf(library_path):
