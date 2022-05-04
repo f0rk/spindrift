@@ -5,6 +5,7 @@ import io
 import glob
 import logging
 import os.path
+import pathlib
 import re
 import shutil
 import subprocess
@@ -629,9 +630,12 @@ def install_local_package(path, dependency):
                         continue
 
                     # similar cases for cryptography
-                    if dependency.key == "cryptography" and line == "_openssl":
-                        continue
-                    if dependency.key == "cryptography" and line == "_padding":
+                    if dependency.key == "cryptography" and line in ("_openssl", "_padding"):
+
+                        for found_path in pathlib.Path(dependency.location).rglob(line + ".*.so"):
+                            elf_data = readelf(found_path.as_posix())
+                            shared_objects.extend(get_dependencies_from_elf_data(elf_data))
+
                         continue
 
                     # similar case for pyrsistent's pvectorc
