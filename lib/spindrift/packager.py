@@ -639,6 +639,7 @@ def install_local_package(path, dependency):
                         shared_objects.extend([
                             "libxmlsec1.so",
                             "libxmlsec1-openssl.so.1",
+                            "libexslt.so.0",
                         ])
 
                         continue
