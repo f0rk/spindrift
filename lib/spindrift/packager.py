@@ -636,6 +636,11 @@ def install_local_package(path, dependency):
                             elf_data = readelf(found_path.as_posix())
                             shared_objects.extend(get_dependencies_from_elf_data(elf_data))
 
+                        shared_objects.extend([
+                            "libxmlsec1.so",
+                            "libxmlsec1-openssl.so.1",
+                        ])
+
                         continue
 
                     # similar case for pyrsistent's pvectorc
