@@ -370,6 +370,9 @@ def _mangle_package(path, dependency):
 
 def install_manylinux_version(path, dependency, runtime, cache_path=None):
 
+    if dependency.key == "cryptography":
+        return False
+
     if cache_path is None:
         cache_path = _get_fake_cache_path()
 
@@ -394,6 +397,9 @@ def _get_fake_cache_path():
 
 
 def download_and_install_manylinux_version(path, dependency, runtime, cache_path=None):
+
+    if dependency.key == "cryptography":
+        return False
 
     # create our own cache if there is no user specified one
     if cache_path is None:
@@ -663,7 +669,7 @@ def install_local_package(path, dependency):
                         ])
 
                     # similar cases for cryptography
-                    if dependency.key == "cryptography" and line in ("_openssl", "_padding"):
+                    if dependency.key == "cryptography" and line in ("_openssl", "_padding", "_constant_time"):
                         continue
 
                     # similar case for pyrsistent's pvectorc
