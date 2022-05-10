@@ -660,13 +660,8 @@ def install_local_package(path, dependency):
                                 if is_ignored:
                                     continue
 
-                                shared_objects.append(elf_dependency)
-
-                        shared_objects.extend([
-                            "libxmlsec1.so",
-                            "libxmlsec1-openssl.so.1",
-                            "libexslt.so.0",
-                        ])
+                                if elf_dependency not in shared_objects:
+                                    shared_objects.append(elf_dependency)
 
                     # similar cases for cryptography
                     if dependency.key == "cryptography" and line in ("_openssl", "_padding", "_constant_time"):
@@ -690,6 +685,8 @@ def install_local_package(path, dependency):
                         shared_objects.extend([
                             "libxmlsec1-openssl.so",
                             "libxmlsec1.so",
+                            "libxmlsec1-openssl.so.1",
+                            "libxmlsec1.so.1",
                             "libxml2.so",
                             "libcrypto.so",
                             "libxslt.so",
