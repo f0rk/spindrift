@@ -496,6 +496,8 @@ def _get_wheel_suffixes(runtime):
         ])
     else:
         suffixes.extend([
+            "cp{version}-cp{version}m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl".format(version=version),
+            "cp{version}-cp{version}-manylinux_2_17_x86_64.manylinux2014_x86_64.whl".format(version=version),
             "cp{version}-cp{version}m-manylinux2010_x86_64.whl".format(version=version),
             "cp{version}-cp{version}-manylinux2010_x86_64.whl".format(version=version),
             "cp{version}-cp{version}m-manylinux1_x86_64.whl".format(version=version),

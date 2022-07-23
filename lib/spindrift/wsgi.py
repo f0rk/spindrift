@@ -81,16 +81,20 @@ def create_wsgi_environ(event):
     server_port = headers.get("X-Forwarded-Port", "80")
 
     # determine the remote address
-    x_forwarded_for = headers.get("X-Forwarded-For", "")
     remote_addr = "127.0.0.1"
-    if "," in x_forwarded_for:
+
+    if "requestContext" in event:
+        if "identity" in event["requestContext"]:
+            if "sourceIp" in event["requestContext"]["identity"]:
+                remote_addr = event["requestContext"]["identity"]["sourceIp"]
+
+    if remote_addr == "127.0.0.1":
+        x_forwarded_for = headers.get("X-Forwarded-For", "")
         remotes = x_forwarded_for.split(",")
         remotes = [r.strip() for r in remotes]
 
-        # last address is the load balancer, second from last is the actual
-        # address
-        if len(remotes) >= 2:
-            remote_addr = remotes[-2]
+        if len(remotes):
+            remote_addr = remotes[0]
 
     # XXX: do we trust this? isn't it always https?
     wsgi_url_scheme = headers.get("X-Forwarded-Proto", "http"),
