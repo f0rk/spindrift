@@ -14,9 +14,6 @@ from werkzeug.wsgi import ClosingIterator
 
 def handler(app, event, context):
 
-    print(event)
-    print(context)
-
     environ = create_wsgi_environ(event)
 
     # override some lambda specifics
