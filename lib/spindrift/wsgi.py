@@ -1,4 +1,4 @@
-# Copyright 2017-2019, Ryan P. Kelly.
+# Copyright 2017-2024, Ryan P. Kelly.
 
 """
 Lambda-Flask WSGI shim. Only used by Lambda.

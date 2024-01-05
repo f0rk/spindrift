@@ -1,4 +1,4 @@
-# Copyright 2017-2022, Ryan P. Kelly.
+# Copyright 2017-2024, Ryan P. Kelly.
 
 import fnmatch
 import io
