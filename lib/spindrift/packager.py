@@ -506,6 +506,7 @@ def _get_wheel_suffixes(runtime):
             "cp{version}-abi3-manylinux1_x86_64.whl".format(version=version),
             "cp34-abi3-manylinux1_x86_64.whl",
             "cp34-abi3-manylinux2010_x86_64.whl",
+            "cp36-abi3-manylinux_2_24_x86_64.whl",
 
         ])
 
