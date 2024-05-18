@@ -1177,7 +1177,7 @@ def install_flask_resources(path):
         shutil.copyfile(wsgi_path, spindrift_wsgi_output_path)
 
 
-def indent_entry(entry, indent="        ")
+def indent_entry(entry, indent="        "):
 
     ret_fp = io.StringIO()
     entry_fp = io.StringIO(entry)
