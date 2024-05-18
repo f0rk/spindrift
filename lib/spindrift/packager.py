@@ -1177,11 +1177,21 @@ def install_flask_resources(path):
         shutil.copyfile(wsgi_path, spindrift_wsgi_output_path)
 
 
+def indent_entry(entry, indent="        ")
+
+    ret_fp = io.StringIO()
+    entry_fp = io.StringIO(entry)
+
+    for line in entry_fp:
+        ret_fp.write(indent + line)
+
+    return ret_fp.getvalue()
+
+
 def write_flask_shim(path, entry):
     index_path = os.path.join(path, "index.py")
     with open(index_path, "w") as fp:
         fp.write("import spindrift.wsgi\n")
-        fp.write(entry)
         #fp.write("import sys\n")
         #fp.write("import logging\n")
         #fp.write("ch = logging.StreamHandler(sys.stdout)\n")
@@ -1190,7 +1200,13 @@ def write_flask_shim(path, entry):
         #fp.write("ch.setFormatter(formatter)\n")
         #fp.write("logging.getLogger().addHandler(ch)\n")
         fp.write("\n")
+        fp.write("app = None\n")
+        fp.write("\n")
         fp.write("def handler(event, context):\n")
+        fp.write("    global app\n")
+        fp.write("    if app is None:\n")
+        fp.write(indent_entry(entry))
+        fp.write("\n")
         fp.write("    return spindrift.wsgi.handler(app, event, context)\n")
 
 
