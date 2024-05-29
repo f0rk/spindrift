@@ -186,26 +186,59 @@ def output_archive(path, destination):
     logger.info("done outputting archive")
 
 
-def find_dependencies(type, package_name, renamed_packages, boto_handling="default"):
-    import pip._vendor.pkg_resources
+def find_dependencies(type, package_name, renamed_packages, boto_handling="default", dependencies_for_package=None):
+    if dependencies_for_package is None:
+        dependencies_for_package = []
 
-    if renamed_packages is not None:
+    package = get_package_from_name(
+        type,
+        package_name,
+        renamed_packages,
+        boto_handling=boto_handling,
+    )
 
-        if isinstance(renamed_packages, dict):
-            if package_name in renamed_packages:
-                package_name = renamed_packages[package_name]
-        elif callable(renamed_packages):
-            package_name = renamed_packages(package_name)
+    if package is None:
+        return dependencies_for_package
 
-    if package_name is None:
+    dependencies_for_package.append(package)
+    processed_dependencies = {package}
+    dependencies_to_process = [package]
+
+    while dependencies_to_process:
+
+        local_package = dependencies_to_process[0]
+        dependencies_to_process = dependencies_to_process[1:]
+
+        local_dependencies = _find_dependencies(
+            type,
+            local_package.key,
+            renamed_packages,
+            boto_handling=boto_handling,
+        )
+
+        for local_dependency in local_dependencies:
+            if local_dependency in processed_dependencies:
+                continue
+
+            processed_dependencies.add(local_dependency)
+
+            dependencies_to_process.append(local_dependency)
+            dependencies_for_package.append(local_dependency)
+
+    return dependencies_for_package
+
+
+def _find_dependencies(type, package_name, renamed_packages, boto_handling="default"):
+
+    package = get_package_from_name(
+        type,
+        package_name,
+        renamed_packages,
+        boto_handling=boto_handling,
+    )
+
+    if package is None:
         return []
-
-    package = pip._vendor.pkg_resources.working_set.by_key[package_name]
-
-    # boto is available on lambda, don't always repackage it
-    if package.key in ("boto3", "botocore") and boto_handling == "default":
-        if type not in ("flask-eb", "flask-eb-reqs"):
-            return []
 
     ret = [package]
 
@@ -218,16 +251,42 @@ def find_dependencies(type, package_name, renamed_packages, boto_handling="defau
             if not requirement.marker.evaluate():
                 continue
 
-        ret.extend(
-            find_dependencies(
-                type,
-                requirement.key,
-                renamed_packages,
-                boto_handling=boto_handling,
-            ),
+        requirement_package = get_package_from_name(
+            type,
+            requirement.key,
+            renamed_packages,
+            boto_handling=boto_handling,
         )
 
+        if requirement_package is not None:
+            ret.append(requirement_package)
+
     return sorted(list(set(ret)))
+
+
+def get_package_from_name(type, package_name, renamed_packages, boto_handling="default"):
+
+    import pip._vendor.pkg_resources
+
+    if renamed_packages is not None:
+
+        if isinstance(renamed_packages, dict):
+            if package_name in renamed_packages:
+                package_name = renamed_packages[package_name]
+        elif callable(renamed_packages):
+            package_name = renamed_packages(package_name)
+
+    if package_name is None:
+        return None
+
+    package = pip._vendor.pkg_resources.working_set.by_key[package_name]
+
+    # boto is available on lambda, don't always repackage it
+    if package.key in ("boto3", "botocore") and boto_handling == "default":
+        if type not in ("flask-eb", "flask-eb-reqs"):
+            return None
+
+    return package
 
 
 def install_dependencies(path, package, runtime, dependencies, download=True, cache_path=None):
