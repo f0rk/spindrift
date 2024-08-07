@@ -43,7 +43,8 @@ def package(
         renamed_packages=None,
         prefer_pyc=True,
         boto_handling="default",
-        extra_packages=None):
+        extra_packages=None,
+        dependency_callback=None):
     """Package up the given package.
 
     :param package: The name of the package to bundle up.
@@ -84,6 +85,9 @@ def package(
         flask-eb or flask-eb-reqs and exclude from the output for other
         packages. If `"include"`, always include.
     :param extra_packages: Extra packages to install, if any.
+    :param dependency_callback: A function taking the arguments (path, package,
+        runtime, dependency, dependency_install_method) that allows for
+        dependency-specific customization (copying of extra files, etc.).
 
     """
 
@@ -121,13 +125,14 @@ def package(
             cache_path=cache_path,
             renamed_packages=renamed_packages,
             prefer_pyc=prefer_pyc,
+            dependency_callback=dependency_callback,
         )
 
         # ...and create the archive
         output_archive(temp_path, destination)
 
 
-def populate_directory(path, package, type, entry, runtime, dependencies, download=True, cache_path=None, renamed_packages=None, prefer_pyc=True):
+def populate_directory(path, package, type, entry, runtime, dependencies, download=True, cache_path=None, renamed_packages=None, prefer_pyc=True, dependency_callback=None):
 
     logger.info("[{}] populating output directory".format(package))
 
@@ -139,6 +144,7 @@ def populate_directory(path, package, type, entry, runtime, dependencies, downlo
         dependencies,
         download=download,
         cache_path=cache_path,
+        dependency_callback=dependency_callback,
     )
 
     # install our project itself
@@ -289,7 +295,7 @@ def get_package_from_name(type, package_name, renamed_packages, boto_handling="d
     return package
 
 
-def install_dependencies(path, package, runtime, dependencies, download=True, cache_path=None):
+def install_dependencies(path, package, runtime, dependencies, download=True, cache_path=None, dependency_callback=None):
 
     logger.info("[{}] installing dependencies".format(package))
 
@@ -312,6 +318,7 @@ def install_dependencies(path, package, runtime, dependencies, download=True, ca
             dependency,
             download=download,
             cache_path=cache_path,
+            dependency_callback=dependency_callback,
         )
 
         installed_dependencies.setdefault(method, [])
@@ -322,9 +329,9 @@ def install_dependencies(path, package, runtime, dependencies, download=True, ca
     return installed_dependencies
 
 
-def install_dependency(path, package, runtime, dependency, download=True, cache_path=None):
+def install_dependency(path, package, runtime, dependency, download=True, cache_path=None, dependency_callback=None):
     logger.info("[{}] installing {}".format(package, dependency.key))
-    return _install_dependency(
+    rv = _install_dependency(
         path,
         package,
         runtime,
@@ -332,6 +339,11 @@ def install_dependency(path, package, runtime, dependency, download=True, cache_
         download=download,
         cache_path=cache_path,
     )
+
+    if dependency_callback is not None:
+        dependency_callback(path, package, runtime, dependency, rv)
+
+    return rv
 
 
 def _install_dependency(path, package, runtime, dependency, download=True, cache_path=None):
@@ -768,6 +780,21 @@ def install_local_package(path, dependency):
                 found_filename = found_path[len(dependency.location) + 1:]
                 to_copy.append(found_filename)
 
+        # add any special .libs folders in
+        libs_folder = dependency.key + ".libs"
+        libs_location = os.path.join(dependency.location, libs_folder)
+        if os.path.exists(libs_location):
+            to_copy.append(libs_folder)
+
+        # special case for pypdfium2
+        if dependency.key == "pypdfium2":
+            pypdfium2_raw_path = os.path.join(
+                dependency.location,
+                "pypdfium2_raw",
+            )
+            if os.path.exists(pypdfium2_raw_path):
+                to_copy.append("pypdfium2_raw")
+
         # copy each found folder into our output
         for folder in to_copy:
 
@@ -842,7 +869,7 @@ def install_local_package(path, dependency):
 
                     if os.path.exists(maybe_library_path):
                         output_path = os.path.join(path, shared_object)
-                        shutil.copyfile(maybe_library_path, output_path,follow_symlinks=True)
+                        shutil.copyfile(maybe_library_path, output_path, follow_symlinks=True)
 
                         found_shared_object = True
                         break
