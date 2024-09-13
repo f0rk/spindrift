@@ -63,8 +63,7 @@ def package(
         import api_app as app`. For `"flask-eb"` or `"flask-eb-reqs"`
         applications, this should import your application and call it
         `application`.
-    :param runtime: The runtime to package for. Should be one of `"python2.7"`,
-        `"python3.6"`, or `"python3.7"`.
+    :param runtime: The runtime to package for.
     :param destination: A path on the file system to store the resulting file.
         No parent directories will be created, so you must ensure they exist.
     :param download: When `True`, whether or not to request installable
@@ -542,6 +541,10 @@ def _get_wheel_suffixes(runtime):
         "python3.7",
         "python3.8",
         "python3.9",
+        "python3.10",
+        "python3.11",
+        "python3.12",
+        "python3.13",
     ]
 
     if runtime not in available_runtimes:
@@ -549,8 +552,8 @@ def _get_wheel_suffixes(runtime):
         available_runtimes_str = ", ".join(available_runtimes)
 
         warnings.warn(
-            "unknown runtime, packaging may fail (only {} are known)."
-            "attemping to parse version from runtime value {!r}"
+            "unknown runtime, packaging may fail (only {} are known). "
+            "attempting to parse version from runtime value {!r}"
             .format(available_runtimes_str, runtime),
             Warning,
         )
