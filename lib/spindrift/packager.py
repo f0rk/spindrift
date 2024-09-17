@@ -1,16 +1,18 @@
 # Copyright 2017-2024, Ryan P. Kelly.
 
 import fnmatch
+import functools
 import io
 import glob
 import logging
 import os.path
+import packaging.tags
+import packaging.utils
 import pathlib
 import re
 import shutil
 import subprocess
 import tempfile
-import warnings
 import zipfile
 
 import requests
@@ -466,6 +468,39 @@ def _get_fake_cache_path():
     return cache_path
 
 
+def _compare_wheel_and_dependency(wheel_name, version, dependency):
+
+    if str(version) != dependency.version:
+        return False
+
+    if wheel_name.lower() == dependency.key.lower():
+        return True
+
+    if wheel_name.lower() == dependency.key.replace("-", "_").lower():
+        return True
+
+    return False
+
+
+def is_wheel_for_dependency(file_name, dependency):
+
+    sys_tags = _get_sys_tags()
+
+    try:
+        package_name, version, tags = _get_wheel_info(file_name)
+    except packaging.utils.InvalidSdistFilename:
+        return False
+
+    if package_name is None:
+        return False
+
+    if _compare_wheel_and_dependency(package_name, version, dependency):
+        if sys_tags & tags:
+            return True
+
+    return False
+
+
 def download_and_install_manylinux_version(path, dependency, runtime, cache_path=None):
 
     if dependency.key == "cryptography":
@@ -489,19 +524,15 @@ def download_and_install_manylinux_version(path, dependency, runtime, cache_path
     # see if we can locate our version in the result
     data = res.json()
     version = dependency.version
-    wheel_suffixes = _get_wheel_suffixes(runtime)
     if version not in data["releases"]:
         return False
 
     # and see if we can find the right wheel
     url = None
-    for wheel_suffix in wheel_suffixes:
-        for info in data["releases"][version]:
-            if info["url"].endswith(wheel_suffix):
-                url = info["url"]
-                break
+    for info in data["releases"][version]:
 
-        if url is not None:
+        if is_wheel_for_dependency(info["filename"], dependency):
+            url = info["url"]
             break
 
     # couldn't get the url, bail
@@ -519,6 +550,8 @@ def download_and_install_manylinux_version(path, dependency, runtime, cache_path
         for chunk in res.iter_content(chunk_size=1024):
             fp.write(chunk)
 
+    load_cached_wheels.cache_clear()
+
     # install the retrieved file
     with zipfile.ZipFile(wheel_path) as zf:
         zf.extractall(path)
@@ -527,73 +560,25 @@ def download_and_install_manylinux_version(path, dependency, runtime, cache_path
     return True
 
 
-def _get_wheel_suffixes(runtime):
+@functools.lru_cache(maxsize=1000)
+def _get_wheel_info(file_name):
 
-    if not runtime.startswith("python2.") and not runtime.startswith("python3."):
-        raise ValueError(
-            "Runtime must start with 'python2.' or 'python3.' (got {!r})"
-            .format(runtime)
-        )
-
-    available_runtimes = [
-        "python2.7",
-        "python3.6",
-        "python3.7",
-        "python3.8",
-        "python3.9",
-        "python3.10",
-        "python3.11",
-        "python3.12",
-        "python3.13",
-    ]
-
-    if runtime not in available_runtimes:
-
-        available_runtimes_str = ", ".join(available_runtimes)
-
-        warnings.warn(
-            "unknown runtime, packaging may fail (only {} are known). "
-            "attempting to parse version from runtime value {!r}"
-            .format(available_runtimes_str, runtime),
-            Warning,
-        )
-
-    version = runtime.replace("python", "")
-    version = version.replace(".", "")
-
-    suffixes = []
-
-    if runtime.startswith("python2."):
-        suffixes.extend([
-            "cp{version}-cp{version}mu-manylinux2010_x86_64.whl".format(version=version),
-            "cp{version}-cp{version}mu-manylinux1_x86_64.whl".format(version=version),
-        ])
+    if file_name.endswith(".whl"):
+        res = packaging.utils.parse_wheel_filename(file_name)
+        name = res[0]
+        version = res[1]
+        tags = list(res[3])
     else:
-        suffixes.extend([
-            "cp{version}-cp{version}m-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl".format(version=version),
-            "cp{version}-cp{version}-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl".format(version=version),
-            "cp{version}-cp{version}m-manylinux_2_12_x86_64.manylinux2010_x86_64.whl".format(version=version),
-            "cp{version}-cp{version}-manylinux_2_12_x86_64.manylinux2010_x86_64.whl".format(version=version),
-            "cp{version}-cp{version}m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl".format(version=version),
-            "cp{version}-cp{version}-manylinux_2_17_x86_64.manylinux2014_x86_64.whl".format(version=version),
-            "cp{version}-cp{version}m-manylinux2010_x86_64.whl".format(version=version),
-            "cp{version}-cp{version}-manylinux2010_x86_64.whl".format(version=version),
-            "cp{version}-cp{version}m-manylinux1_x86_64.whl".format(version=version),
-            "cp{version}-cp{version}-manylinux1_x86_64.whl".format(version=version),
-            "cp{version}-abi3-manylinux2010_x86_64.whl".format(version=version),
-            "cp{version}-abi3-manylinux1_x86_64.whl".format(version=version),
-            "cp34-abi3-manylinux1_x86_64.whl",
-            "cp34-abi3-manylinux2010_x86_64.whl",
-            "cp36-abi3-manylinux_2_24_x86_64.whl",
+        name = None
+        version = None
+        tags = []
 
-        ])
+    return name, version, set(tags)
 
-    suffixes.extend([
-        "py{major_version}-none-any.whl".format(major_version=version[:1]),
-        "py2.py3-none-any.whl",
-    ])
 
-    return suffixes
+@functools.lru_cache
+def _get_sys_tags():
+    return set(list(packaging.tags.sys_tags()))
 
 
 def _install_cached_manylinux_version(cache_path, path, dependency, runtime):
@@ -601,30 +586,10 @@ def _install_cached_manylinux_version(cache_path, path, dependency, runtime):
     # get every known wheel out of the cache
     available_wheels = load_cached_wheels(cache_path)
 
-    # determine the correct name for the wheel we want
-    suffixes = _get_wheel_suffixes(runtime)
-
     wheel_name = None
-    for suffix in suffixes:
-        maybe_wheel_name = "{}-{}-{}".format(
-            dependency.key,
-            dependency.version,
-            suffix,
-        )
+    for maybe_wheel_name in available_wheels.keys():
 
-        # see if it's a match
-        if maybe_wheel_name.lower() in available_wheels:
-            wheel_name = maybe_wheel_name
-            break
-
-        # try replacing - with _ as well
-        maybe_wheel_name = "{}-{}-{}".format(
-            dependency.key.replace("-", "_"),
-            dependency.version,
-            suffix,
-        )
-
-        if maybe_wheel_name.lower() in available_wheels:
+        if is_wheel_for_dependency(maybe_wheel_name, dependency):
             wheel_name = maybe_wheel_name
             break
 
@@ -641,6 +606,7 @@ def _install_cached_manylinux_version(cache_path, path, dependency, runtime):
     return True
 
 
+@functools.lru_cache
 def load_cached_wheels(path):
 
     ret = {}
