@@ -445,6 +445,9 @@ def install_manylinux_version(path, dependency, runtime, cache_path=None):
     if dependency.key == "cryptography":
         return False
 
+    if dependency.key == "xmlsec":
+        return False
+
     if cache_path is None:
         cache_path = _get_fake_cache_path()
 
