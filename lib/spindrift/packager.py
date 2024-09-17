@@ -473,10 +473,13 @@ def _compare_wheel_and_dependency(wheel_name, version, dependency):
     if str(version) != dependency.version:
         return False
 
-    if wheel_name.lower() == dependency.key.lower():
+    mangled_wheel_name = wheel_name.replace(".", "-")
+    mangled_dependency_key = dependency.key.replace(".", "-")
+
+    if mangled_wheel_name.lower() == mangled_dependency_key.lower():
         return True
 
-    if wheel_name.lower() == dependency.key.replace("-", "_").lower():
+    if mangled_wheel_name.lower() == mangled_dependency_key.replace("-", "_").lower():
         return True
 
     return False
