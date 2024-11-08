@@ -3,6 +3,7 @@
 import fnmatch
 import functools
 import io
+import importlib.metadata
 import glob
 import logging
 import os.path
@@ -626,6 +627,33 @@ def load_cached_wheels(path):
     return ret
 
 
+def find_source_from_metadata(module_name):
+
+    dist = importlib.metadata.distribution(module_name)
+
+    editable_pth = None
+    for path in dist.files:
+        if path.name.startswith("__editable__."):
+            editable_pth = path
+            break
+    else:
+        return None
+
+    editable_dirs = editable_pth.read_text().split("\n")
+
+    module_source = None
+    for editable_dir in editable_dirs:
+        if os.path.isdir(editable_dir):
+            true_source = os.path.join(editable_dir, module_name)
+            if os.path.isdir(true_source):
+                module_source = true_source
+                break
+    else:
+        return None
+
+    return module_source
+
+
 def install_local_package(path, dependency):
 
     if os.path.isfile(dependency.location):
@@ -789,12 +817,20 @@ def install_local_package(path, dependency):
 
             if os.path.isfile(source):
                 shutil.copyfile(source, destination)
-            else:
+            elif os.path.isdir(source):
                 shutil.copytree(
                     source,
                     destination,
                     ignore=shutil.ignore_patterns(*IGNORED),
                 )
+            else:
+                source = find_source_from_metadata(folder)
+                if source is not None:
+                    shutil.copytree(
+                        source,
+                        destination,
+                        ignore=shutil.ignore_patterns(*IGNORED),
+                    )
 
         if shared_objects:
 
