@@ -724,6 +724,10 @@ def install_local_package(path, dependency):
                     if dependency.key == "cffi" and line == "_cffi_backend":
                         continue
 
+                    # and for PyNaCl (skip "_sodium", as "nacl" will get it)
+                    if dependency.key == "pynacl" and line == "_sodium":
+                        continue
+
                     if dependency.key == "cryptography":
 
                         module_path = pathlib.Path(dependency.location)
