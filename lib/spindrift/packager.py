@@ -388,7 +388,7 @@ def _install_dependency(path, package, runtime, dependency, download=True, cache
             return "download_and_install_manylinux_version"
 
     # if we get this far, use whatever package we have installed locally
-    rv = install_local_package(path, dependency)
+    rv = install_local_package(path, dependency, package)
     if rv:
 
         logger.info(
@@ -627,9 +627,18 @@ def load_cached_wheels(path):
     return ret
 
 
-def find_source_from_metadata(module_name):
+def find_source_from_metadata(module_name, log_prefix):
 
-    dist = importlib.metadata.distribution(module_name)
+    try:
+        dist = importlib.metadata.distribution(module_name)
+    except importlib.metadata.PackageNotFoundError:
+        logger.warn(
+            (
+                "[{}] unable to locate source for {}. This may not be an "
+                "issue if it is included some other way."
+            ).format(log_prefix, module_name)
+        )
+        return None
 
     editable_pth = None
     for path in dist.files:
@@ -654,7 +663,7 @@ def find_source_from_metadata(module_name):
     return module_source
 
 
-def install_local_package(path, dependency):
+def install_local_package(path, dependency, name):
 
     if os.path.isfile(dependency.location):
         if dependency.location.endswith(".egg"):
@@ -828,7 +837,7 @@ def install_local_package(path, dependency):
                     ignore=shutil.ignore_patterns(*IGNORED),
                 )
             else:
-                source = find_source_from_metadata(folder)
+                source = find_source_from_metadata(folder, name)
                 if source is not None:
                     shutil.copytree(
                         source,
@@ -1197,7 +1206,7 @@ def install_project(path, name):
 
     package = pip._vendor.pkg_resources.working_set.by_key[name]
 
-    rv = install_local_package(path, package)
+    rv = install_local_package(path, package, name)
 
     logger.info("[{}] done installing project".format(name))
 
