@@ -655,9 +655,9 @@ def find_source_from_metadata(module_name, log_prefix):
     module_source = None
     for editable_dir in editable_dirs:
         if os.path.isdir(editable_dir):
-            true_source = os.path.join(editable_dir, module_name)
-            if os.path.isdir(true_source):
-                module_source = true_source
+            editable_subdir = os.path.join(editable_dir, module_name)
+            if os.path.isdir(editable_subdir):
+                module_source = editable_subdir
                 break
     else:
         return None
