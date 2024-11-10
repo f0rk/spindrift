@@ -632,11 +632,13 @@ def find_source_from_metadata(module_name, log_prefix):
     try:
         dist = importlib.metadata.distribution(module_name)
     except importlib.metadata.PackageNotFoundError:
-        logger.warn(
+        logger.info(
             (
-                "[{}] unable to locate source for {}. This may not be an "
-                "issue if it is included some other way."
-            ).format(log_prefix, module_name)
+                "[{}] unable to locate source for {!r} via importlib metadata"
+            ).format(
+                log_prefix,
+                module_name,
+            )
         )
         return None
 
@@ -838,11 +840,23 @@ def install_local_package(path, dependency, name):
                 )
             else:
                 source = find_source_from_metadata(folder, name)
+
                 if source is not None:
                     shutil.copytree(
                         source,
                         destination,
                         ignore=shutil.ignore_patterns(*IGNORED),
+                    )
+                else:
+                    logger.warn(
+                        (
+                            "[{}] exhausted methods to include {!r} in "
+                            "package; this may be not be an issue if the "
+                            "dependency is included some other way"
+                        ).format(
+                            name,
+                            folder,
+                        )
                     )
 
         if shared_objects:
