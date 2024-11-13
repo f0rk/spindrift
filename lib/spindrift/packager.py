@@ -3,6 +3,7 @@
 import fnmatch
 import functools
 import io
+import importlib.metadata
 import glob
 import logging
 import os.path
@@ -387,7 +388,7 @@ def _install_dependency(path, package, runtime, dependency, download=True, cache
             return "download_and_install_manylinux_version"
 
     # if we get this far, use whatever package we have installed locally
-    rv = install_local_package(path, dependency)
+    rv = install_local_package(path, dependency, package)
     if rv:
 
         logger.info(
@@ -626,7 +627,45 @@ def load_cached_wheels(path):
     return ret
 
 
-def install_local_package(path, dependency):
+def find_source_from_metadata(module_name, log_prefix):
+
+    try:
+        dist = importlib.metadata.distribution(module_name)
+    except importlib.metadata.PackageNotFoundError:
+        logger.info(
+            (
+                "[{}] unable to locate source for {!r} via importlib metadata"
+            ).format(
+                log_prefix,
+                module_name,
+            )
+        )
+        return None
+
+    editable_pth = None
+    for path in dist.files:
+        if path.name.startswith("__editable__."):
+            editable_pth = path
+            break
+    else:
+        return None
+
+    editable_dirs = editable_pth.read_text().split("\n")
+
+    module_source = None
+    for editable_dir in editable_dirs:
+        if os.path.isdir(editable_dir):
+            editable_subdir = os.path.join(editable_dir, module_name)
+            if os.path.isdir(editable_subdir):
+                module_source = editable_subdir
+                break
+    else:
+        return None
+
+    return module_source
+
+
+def install_local_package(path, dependency, name):
 
     if os.path.isfile(dependency.location):
         if dependency.location.endswith(".egg"):
@@ -694,6 +733,10 @@ def install_local_package(path, dependency):
 
                     # similar case for cffi
                     if dependency.key == "cffi" and line == "_cffi_backend":
+                        continue
+
+                    # and for PyNaCl (skip "_sodium", as "nacl" will get it)
+                    if dependency.key == "pynacl" and line == "_sodium":
                         continue
 
                     if dependency.key == "cryptography":
@@ -789,12 +832,32 @@ def install_local_package(path, dependency):
 
             if os.path.isfile(source):
                 shutil.copyfile(source, destination)
-            else:
+            elif os.path.isdir(source):
                 shutil.copytree(
                     source,
                     destination,
                     ignore=shutil.ignore_patterns(*IGNORED),
                 )
+            else:
+                source = find_source_from_metadata(folder, name)
+
+                if source is not None:
+                    shutil.copytree(
+                        source,
+                        destination,
+                        ignore=shutil.ignore_patterns(*IGNORED),
+                    )
+                else:
+                    logger.warn(
+                        (
+                            "[{}] exhausted methods to include {!r} in "
+                            "package; this may be not be an issue if the "
+                            "dependency is included some other way"
+                        ).format(
+                            name,
+                            folder,
+                        )
+                    )
 
         if shared_objects:
 
@@ -1157,7 +1220,7 @@ def install_project(path, name):
 
     package = pip._vendor.pkg_resources.working_set.by_key[name]
 
-    rv = install_local_package(path, package)
+    rv = install_local_package(path, package, name)
 
     logger.info("[{}] done installing project".format(name))
 
