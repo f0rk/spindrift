@@ -849,11 +849,10 @@ def install_local_package(path, dependency, name):
                     )
                 else:
                     logger.warn(
-                        (
-                            "[{}] exhausted methods to include {!r} in "
-                            "package; this may be not be an issue if the "
-                            "dependency is included some other way"
-                        ).format(
+                        "[{}] exhausted methods to include {!r} in "
+                        "package; this may be not be an issue if the "
+                        "dependency is included some other way"
+                        .format(
                             name,
                             folder,
                         )
