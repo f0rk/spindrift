@@ -9,6 +9,7 @@ import logging
 import os.path
 import packaging.tags
 import packaging.utils
+import packaging.requirements
 import pathlib
 import re
 import shutil
@@ -97,6 +98,7 @@ def package(
     if extra_packages is not None:
         dependency_packages.extend(extra_packages)
 
+    dependency_names = set()
     dependencies = []
 
     # determine what our dependencies are
@@ -108,9 +110,14 @@ def package(
             boto_handling=boto_handling,
         )
 
-        dependencies.extend(dependencies_for_package)
+        for dependency in dependencies_for_package:
+            if dependency.name in dependency_names:
+                continue
 
-    dependencies = sorted(list(set(dependencies)))
+            dependency_names.add(dependency.name)
+            dependencies.append(dependency)
+
+    dependencies = list(sorted(dependencies, key=lambda x: x.name))
 
     # create a temporary directory to start creating things in
     with spindrift.compat.TemporaryDirectory() as temp_path:
@@ -209,29 +216,30 @@ def find_dependencies(type, package_name, renamed_packages, boto_handling="defau
         return dependencies_for_package
 
     dependencies_for_package.append(package)
-    processed_dependencies = {package}
+    processed_dependencies = {package.name}
     dependencies_to_process = [package]
 
     while dependencies_to_process:
-
         local_package = dependencies_to_process[0]
         dependencies_to_process = dependencies_to_process[1:]
 
         local_dependencies = _find_dependencies(
             type,
-            local_package.key,
+            local_package.name,
             renamed_packages,
             boto_handling=boto_handling,
         )
 
         for local_dependency in local_dependencies:
-            if local_dependency in processed_dependencies:
+            if local_dependency.name in processed_dependencies:
                 continue
 
-            processed_dependencies.add(local_dependency)
+            processed_dependencies.add(local_dependency.name)
 
             dependencies_to_process.append(local_dependency)
             dependencies_for_package.append(local_dependency)
+
+    dependencies_for_package.remove(package)
 
     return dependencies_for_package
 
@@ -248,36 +256,38 @@ def _find_dependencies(type, package_name, renamed_packages, boto_handling="defa
     if package is None:
         return []
 
-    ret = [package]
+    ret_names = set()
+    ret = []
 
-    requires = package.requires()
-    for requirement in requires:
+    requires = package.requires or []
+    for req_str in requires:
+        requirement = packaging.requirements.Requirement(req_str)
 
-        # if this requirement is conditional on the environment, skip it if we
-        # don't need it
+        # check for environment markers
         if requirement.marker is not None:
             if not requirement.marker.evaluate():
                 continue
 
         requirement_package = get_package_from_name(
             type,
-            requirement.key,
+            requirement.name,
             renamed_packages,
             boto_handling=boto_handling,
         )
 
         if requirement_package is not None:
+            if requirement_package.name in ret_names:
+                continue
             ret.append(requirement_package)
+            ret_names.add(requirement_package.name)
 
-    return sorted(list(set(ret)))
+    ret = list(sorted(ret, key=lambda x: x.name))
+
+    return ret
 
 
 def get_package_from_name(type, package_name, renamed_packages, boto_handling="default"):
-
-    import pip._vendor.pkg_resources
-
     if renamed_packages is not None:
-
         if isinstance(renamed_packages, dict):
             if package_name in renamed_packages:
                 package_name = renamed_packages[package_name]
@@ -287,14 +297,76 @@ def get_package_from_name(type, package_name, renamed_packages, boto_handling="d
     if package_name is None:
         return None
 
-    package = pip._vendor.pkg_resources.working_set.by_key[package_name]
+    dist = importlib.metadata.distribution(package_name)
 
     # boto is available on lambda, don't always repackage it
-    if package.key in ("boto3", "botocore") and boto_handling == "default":
+    if package_name in ("boto3", "botocore") and boto_handling == "default":
         if type not in ("flask-eb", "flask-eb-reqs"):
             return None
 
-    return package
+    return dist
+
+
+def get_package_location(dist):
+    try:
+        # try to get the location from the dist itself
+        if hasattr(dist, '_path'):
+            return os.path.dirname(dist._path)
+
+        # try to find the location via the first file
+        for file_path in dist.files or []:
+            if hasattr(file_path, "locate"):
+                path = file_path.locate()
+                return os.path.dirname(os.path.dirname(path))
+            elif hasattr(file_path, "root"):
+                return file_path.root
+
+        # try to get location using a module from the package
+        top_level_names = get_top_level_names(dist)
+        if top_level_names:
+            for name in top_level_names:
+                try:
+                    module = __import__(name)
+                    if hasattr(module, "__file__") and module.__file__:
+                        return os.path.dirname(os.path.dirname(module.__file__))
+                except ImportError:
+                    continue
+    except (TypeError, AttributeError, FileNotFoundError) as e:
+        logger.error(f"error getting location for {dist.name}: {e}")
+
+    # last resort: look for info in sys.path or site-packages
+    import site
+    import sys
+
+    for path in sys.path + site.getsitepackages():
+        # check for an egg-info or dist-info directory
+        egg_info = os.path.join(path, f"{dist.name.replace('-', '_')}.egg-info")
+        dist_info = os.path.join(path, f"{dist.name.replace('-', '_')}-{dist.version}.dist-info")
+
+        if os.path.exists(egg_info) or os.path.exists(dist_info):
+            return path
+
+    raise Exception(f"could not determine location for {dist.name}")
+
+
+def get_top_level_names(dist):
+    try:
+        # try to get top_level.txt
+        if dist.files:
+            for file in dist.files:
+                if str(file).endswith('top_level.txt'):
+                    content = file.read_text().strip()
+                    return [name for name in content.split('\n') if name]
+
+        # try from metadata directly if available
+        if hasattr(dist, 'read_text') and dist.read_text('top_level.txt'):
+            content = dist.read_text('top_level.txt').strip()
+            return [name for name in content.split('\n') if name]
+    except (AttributeError, FileNotFoundError, KeyError):
+        pass
+
+    # fallback: assume package name is the top level module
+    return [dist.name.replace('-', '_')]
 
 
 def install_dependencies(path, package, runtime, dependencies, download=True, cache_path=None, dependency_callback=None):
@@ -310,7 +382,7 @@ def install_dependencies(path, package, runtime, dependencies, download=True, ca
 
         # don't try to install our own code this way, we'll never need to
         # download or want to override it
-        if dependency.key == package:
+        if dependency.name == package:
             continue
 
         method = install_dependency(
@@ -332,7 +404,7 @@ def install_dependencies(path, package, runtime, dependencies, download=True, ca
 
 
 def install_dependency(path, package, runtime, dependency, download=True, cache_path=None, dependency_callback=None):
-    logger.info("[{}] installing {}".format(package, dependency.key))
+    logger.info("[{}] installing {}".format(package, dependency.name))
     rv = _install_dependency(
         path,
         package,
@@ -349,7 +421,6 @@ def install_dependency(path, package, runtime, dependency, download=True, cache_
 
 
 def _install_dependency(path, package, runtime, dependency, download=True, cache_path=None):
-
     # each of the functions below will return false if they couldn't
     # perform the requested operation, or true if they did. perform the
     # attempts in order, and skip the remaining options if we succeed.
@@ -364,7 +435,7 @@ def _install_dependency(path, package, runtime, dependency, download=True, cache
     if rv:
         logger.info(
             "[{}] installed {} via install_manylinux_version"
-            .format(package, dependency.key)
+            .format(package, dependency.name)
         )
 
         _mangle_package(path, dependency)
@@ -381,7 +452,7 @@ def _install_dependency(path, package, runtime, dependency, download=True, cache
         if rv:
             logger.info(
                 "[{}] installed {} via download_and_install_manylinux_version"
-                .format(package, dependency.key)
+                .format(package, dependency.name)
             )
 
             _mangle_package(path, dependency)
@@ -393,24 +464,22 @@ def _install_dependency(path, package, runtime, dependency, download=True, cache
 
         logger.info(
             "[{}] installed {} via install_local_package"
-            .format(package, dependency.key)
+            .format(package, dependency.name)
         )
 
         _mangle_package(path, dependency)
         return "install_local_package"
 
     raise Exception("Unable to find suitable source for {}=={}"
-                    .format(dependency.key, dependency.version))
+                    .format(dependency.name, dependency.version))
 
 
 def _mangle_package(path, dependency):
-
     # some packages just aren't ready to be used when bundled up locally.
     # biggest offenders are packages using pkg_resources.get_distribution.
     # here, we perform any package-specific source modifications.
 
-    if dependency.key == "sqlalchemy-redshift":
-
+    if dependency.name == "sqlalchemy-redshift":
         # overwrite __init__.py to replace pkg_resources.get_distribution call
         # with hardcoded version and fix registry entry
         sqlalchemy_redshift_init_path = os.path.join(
@@ -419,34 +488,34 @@ def _mangle_package(path, dependency):
             "__init__.py",
         )
 
-        with open(sqlalchemy_redshift_init_path, "r+") as fp:
-            current_init_data = fp.read()
+        if os.path.exists(sqlalchemy_redshift_init_path):
+            with open(sqlalchemy_redshift_init_path, "r+") as fp:
+                current_init_data = fp.read()
 
-            version_expr = r"get_distribution\('sqlalchemy-redshift'\).version"
-            mangled_init_data = re.sub(
-                version_expr,
-                '"{}"'.format(dependency.version),
-                current_init_data,
-            )
+                version_expr = r"get_distribution\('sqlalchemy-redshift'\).version"
+                mangled_init_data = re.sub(
+                    version_expr,
+                    '"{}"'.format(dependency.version),
+                    current_init_data,
+                )
 
-            register_expr = r"redshift\+psycopg2"
-            mangled_init_data = re.sub(
-                register_expr,
-                "redshift.psycopg2",
-                mangled_init_data,
-            )
+                register_expr = r"redshift\+psycopg2"
+                mangled_init_data = re.sub(
+                    register_expr,
+                    "redshift.psycopg2",
+                    mangled_init_data,
+                )
 
-            fp.seek(0)
-            fp.truncate()
-            fp.write(mangled_init_data)
+                fp.seek(0)
+                fp.truncate()
+                fp.write(mangled_init_data)
 
 
 def install_manylinux_version(path, dependency, runtime, cache_path=None):
-
-    if dependency.key == "cryptography":
+    if dependency.name == "cryptography":
         return False
 
-    if dependency.key == "xmlsec":
+    if dependency.name == "xmlsec":
         return False
 
     if cache_path is None:
@@ -478,7 +547,7 @@ def _compare_wheel_and_dependency(wheel_name, version, dependency):
         return False
 
     mangled_wheel_name = wheel_name.replace(".", "-")
-    mangled_dependency_key = dependency.key.replace(".", "-")
+    mangled_dependency_key = dependency.name.replace(".", "-")
 
     if mangled_wheel_name.lower() == mangled_dependency_key.lower():
         return True
@@ -509,8 +578,7 @@ def is_wheel_for_dependency(file_name, dependency):
 
 
 def download_and_install_manylinux_version(path, dependency, runtime, cache_path=None):
-
-    if dependency.key == "cryptography":
+    if dependency.name == "cryptography":
         return False
 
     # create our own cache if there is no user specified one
@@ -518,7 +586,7 @@ def download_and_install_manylinux_version(path, dependency, runtime, cache_path
         cache_path = _get_fake_cache_path()
 
     # get package info from pypi
-    name = dependency.key
+    name = dependency.name
     res = requests.get("https://pypi.python.org/pypi/{}/json".format(name))
 
     # if we don't find the package there, bail
@@ -642,15 +710,29 @@ def find_source_from_metadata(module_name, log_prefix):
         )
         return None
 
-    editable_pth = None
-    for path in dist.files:
-        if path.name.startswith("__editable__."):
-            editable_pth = path
-            break
-    else:
+    # check for editable installation
+    editable_marker = None
+    for file_path in dist.files or []:
+        if "__editable__" in str(file_path):
+            try:
+                editable_marker = file_path
+                break
+            except (AttributeError, TypeError):
+                continue
+
+    if not editable_marker:
         return None
 
-    editable_dirs = editable_pth.read_text().split("\n")
+    try:
+        editable_text = editable_marker.read_text()
+        editable_dirs = editable_text.split("\n")
+    except (AttributeError, TypeError):
+        try:
+            with open(str(editable_marker), 'r') as f:
+                editable_text = f.read()
+                editable_dirs = editable_text.split("\n")
+        except (FileNotFoundError, TypeError):
+            return None
 
     module_source = None
     for editable_dir in editable_dirs:
@@ -659,26 +741,28 @@ def find_source_from_metadata(module_name, log_prefix):
             if os.path.isdir(editable_subdir):
                 module_source = editable_subdir
                 break
-    else:
-        return None
 
     return module_source
 
 
-def install_local_package(path, dependency, name):
+def get_egg_name(dist):
+    return f"{dist.name.replace('-', '_')}-{dist.version}"
 
-    if os.path.isfile(dependency.location):
-        if dependency.location.endswith(".egg"):
+
+def install_local_package(path, dependency, name):
+    dependency_location = get_package_location(dependency)
+
+    if os.path.isfile(dependency_location):
+        if dependency_location.endswith(".egg"):
             return install_local_package_from_egg(path, dependency)
         else:
             raise Exception("Unable to install local package for {}"
-                            .format(dependency))
-    elif os.path.isdir(dependency.location):
-
+                            .format(dependency.name))
+    elif os.path.isdir(dependency_location):
         # see if it's just an egg file inside the directory
         egg_zip_path = os.path.join(
-            dependency.location,
-            dependency.egg_name() + ".egg",
+            dependency_location,
+            get_egg_name(dependency) + ".egg",
         )
         if os.path.isfile(egg_zip_path):
             return install_local_package_from_egg(
@@ -699,119 +783,113 @@ def install_local_package(path, dependency, name):
             "ld-linux-x86-64.so",
         ]
 
-        top_level_path = _locate_top_level(dependency)
-        if not top_level_path:
-
+        top_level_names = get_top_level_names(dependency)
+        if not top_level_names:
             # last ditch attempt, assume that the key of the package is the
             # actual folder name
             package_with_top_level = os.path.join(
-                dependency.location,
-                dependency.key,
+                dependency_location,
+                dependency.name,
             )
 
             if not os.path.exists(package_with_top_level):
                 raise Exception("Unable to install local package for {}, "
                                 "top_level.txt was not found"
-                                .format(dependency))
+                                .format(dependency.name))
 
             # well... we found something
-            to_copy.append(dependency.key)
-
-        # read folder names out of top_level.txt
+            to_copy.append(dependency.name)
         else:
-            with open(top_level_path, "r") as fp:
-                for line in fp:
-                    line = line.strip()
+            # add all top-level modules to copy list
+            for top_level in top_level_names:
+                if not top_level.strip():
+                    continue
 
-                    if not line:
-                        continue
+                # in a special case for pyyaml, skip the _yaml (which is
+                # for the .so)
+                if dependency.name == "pyyaml" and top_level == "_yaml":
+                    continue
 
-                    # in a special case for pyyaml, skip the _yaml (which is
-                    # for the .so)
-                    if dependency.key == "pyyaml" and line == "_yaml":
-                        continue
+                # similar case for cffi
+                if dependency.name == "cffi" and top_level == "_cffi_backend":
+                    continue
 
-                    # similar case for cffi
-                    if dependency.key == "cffi" and line == "_cffi_backend":
-                        continue
+                # and for PyNaCl (skip "_sodium", as "nacl" will get it)
+                if dependency.name == "pynacl" and top_level == "_sodium":
+                    continue
 
-                    # and for PyNaCl (skip "_sodium", as "nacl" will get it)
-                    if dependency.key == "pynacl" and line == "_sodium":
-                        continue
+                if dependency.name == "cryptography":
+                    module_path = pathlib.Path(dependency_location)
 
-                    if dependency.key == "cryptography":
+                    for found_path in module_path.rglob(top_level + ".*.so"):
+                        elf_data = readelf(found_path.as_posix())
 
-                        module_path = pathlib.Path(dependency.location)
+                        elf_dependencies = get_dependencies_from_elf_data(elf_data)
 
-                        for found_path in module_path.rglob(line + ".*.so"):
-                            elf_data = readelf(found_path.as_posix())
+                        for elf_dependency in elf_dependencies:
+                            is_ignored = is_ignored_shared_object(
+                                elf_dependency,
+                                ignored_shared_objects,
+                            )
+                            if is_ignored:
+                                continue
 
-                            elf_dependencies = get_dependencies_from_elf_data(elf_data)
+                            if elf_dependency not in shared_objects:
+                                shared_objects.append(elf_dependency)
 
-                            for elf_dependency in elf_dependencies:
-                                is_ignored = is_ignored_shared_object(
-                                    elf_dependency,
-                                    ignored_shared_objects,
-                                )
-                                if is_ignored:
-                                    continue
+                # similar cases for cryptography
+                if dependency.name == "cryptography" and top_level in ("_openssl", "_padding", "_constant_time"):
+                    continue
 
-                                if elf_dependency not in shared_objects:
-                                    shared_objects.append(elf_dependency)
+                # similar case for pyrsistent's pvectorc
+                if dependency.name == "pyrsistent" and top_level == "pvectorc":
+                    continue
 
-                    # similar cases for cryptography
-                    if dependency.key == "cryptography" and line in ("_openssl", "_padding", "_constant_time"):
-                        continue
+                # python packaging makes no sense, case in point: setuptools
+                if dependency.name == "setuptools" and top_level == "dist":
+                    continue
 
-                    # similar case for pyrsistent's pvectorc
-                    if dependency.key == "pyrsistent" and line == "pvectorc":
-                        continue
+                # avoid a situation like:
+                # ['websockets', 'websockets/extensions', 'websockets/legacy']
+                if not _is_path_common_to_any(top_level, to_copy):
+                    to_copy.append(top_level)
 
-                    # python packaging makes no sense, case in point: setuptools
-                    if dependency.key == "setuptools" and line == "dist":
-                        continue
+                if dependency.name == "xmlsec" and top_level == "xmlsec":
+                    to_find.append("xmlsec.*.so")
+                    shared_objects.extend([
+                        "libxmlsec1-openssl.so",
+                        "libxmlsec1.so",
+                        "libxmlsec1-openssl.so.1",
+                        "libxmlsec1.so.1",
+                        "libxml2.so",
+                        "libcrypto.so",
+                        "libxslt.so",
+                        "libicuuc.so",
+                        "libicudata.so",
+                    ])
 
-                    # avoid a situation like:
-                    # ['websockets', 'websockets/extensions', 'websockets/legacy']
-                    if not _is_path_common_to_any(line, to_copy):
-                        to_copy.append(line)
-
-                    if dependency.key == "xmlsec" and line == "xmlsec":
-                        to_find.append("xmlsec.*.so")
-                        shared_objects.extend([
-                            "libxmlsec1-openssl.so",
-                            "libxmlsec1.so",
-                            "libxmlsec1-openssl.so.1",
-                            "libxmlsec1.so.1",
-                            "libxml2.so",
-                            "libcrypto.so",
-                            "libxslt.so",
-                            "libicuuc.so",
-                            "libicudata.so",
-                        ])
-
-                    if dependency.key == "python-magic":
-                        shared_objects.extend([
-                            "libmagic.so.1",
-                        ])
+                if dependency.name == "python-magic":
+                    shared_objects.extend([
+                        "libmagic.so.1",
+                    ])
 
         # locate any findables
         for item in to_find:
-            source = os.path.join(dependency.location, item)
+            source = os.path.join(dependency_location, item)
             for found_path in glob.glob(source):
-                found_filename = found_path[len(dependency.location) + 1:]
+                found_filename = found_path[len(dependency_location) + 1:]
                 to_copy.append(found_filename)
 
         # add any special .libs folders in
-        libs_folder = dependency.key + ".libs"
-        libs_location = os.path.join(dependency.location, libs_folder)
+        libs_folder = dependency.name + ".libs"
+        libs_location = os.path.join(dependency_location, libs_folder)
         if os.path.exists(libs_location):
             to_copy.append(libs_folder)
 
         # special case for pypdfium2
-        if dependency.key == "pypdfium2":
+        if dependency.name == "pypdfium2":
             pypdfium2_raw_path = os.path.join(
-                dependency.location,
+                dependency_location,
                 "pypdfium2_raw",
             )
             if os.path.exists(pypdfium2_raw_path):
@@ -819,8 +897,7 @@ def install_local_package(path, dependency, name):
 
         # copy each found folder into our output
         for folder in to_copy:
-
-            source = os.path.join(dependency.location, folder)
+            source = os.path.join(dependency_location, folder)
             destination = os.path.join(path, folder)
 
             # maybe we're dealing with a .py file instead of a directory
@@ -885,6 +962,20 @@ def install_local_package(path, dependency, name):
 
             ldconfig_process.communicate()
 
+            # if running in WSL, trim ":" and everything after it
+            running_in_wsl = False
+            if os.path.exists("/proc/version"):
+                with open("/proc/version", "r") as f:
+                    version = f.read()
+                    if "WSL" in version:
+                        running_in_wsl = True
+
+            if running_in_wsl:
+                ld_library_paths = [
+                    path.split(":", maxsplit=1)[0].strip()
+                    for path in ld_library_paths
+                ]
+
             shared_objects = find_shared_objects(
                 shared_objects,
                 ld_library_paths,
@@ -892,8 +983,7 @@ def install_local_package(path, dependency, name):
             )
 
             for shared_object in shared_objects:
-
-                logger.info("from {} including shared object {}".format(dependency.key, shared_object))
+                logger.info("from {} including shared object {}".format(dependency.name, shared_object))
 
                 if not ld_library_paths:
                     raise Exception(
@@ -923,7 +1013,7 @@ def install_local_package(path, dependency, name):
 
     else:
         raise Exception("Unable to install local package for {}, neither a "
-                        "file nor a directory".format(dependency))
+                        "file nor a directory".format(dependency.name))
 
     # success
     return True
@@ -1066,11 +1156,22 @@ def parse_elf_dependency_line(line):
 def install_local_package_from_egg(path, dependency, egg_path=None):
 
     if egg_path is None:
-        egg_path = dependency.location
+        egg_path = get_package_location(dependency)
+        if not os.path.isfile(egg_path):
+            raise Exception(f"Could not locate egg file for {dependency.name}")
 
     with zipfile.ZipFile(egg_path) as zf:
-        data = zf.read("EGG-INFO/top_level.txt")
-        data = data.decode("utf-8")
+        try:
+            data = zf.read("EGG-INFO/top_level.txt")
+            data = data.decode("utf-8")
+        except KeyError:
+            # Try to find any top level files
+            all_names = zf.namelist()
+            python_files = [n for n in all_names if n.endswith('.py') and '/' not in n]
+            if not python_files:
+                raise Exception(f"Could not locate top-level files in egg for {dependency.name}")
+
+            data = '\n'.join([p[:-3] for p in python_files])  # Strip .py extension
 
         to_copy = []
         for line in data.split("\n"):
@@ -1122,75 +1223,6 @@ def install_local_package_from_egg(path, dependency, egg_path=None):
         return True
 
 
-def _locate_top_level(dependency):
-
-    paths_to_try = []
-
-    # unzipped egg?
-    if dependency.location.endswith(".egg"):
-        paths_to_try.append(os.path.join(dependency.location, "EGG-INFO"))
-
-    # something else
-    else:
-
-        # could be a plain .egg-info folder, or a .egg/EGG-INFO setup
-        egg_info_path = os.path.join(
-            dependency.location,
-            dependency.key + ".egg-info",
-        )
-        paths_to_try.append(egg_info_path)
-
-        # could be a plain .egg-info folder on the egg name
-        egg_info_path = os.path.join(
-            dependency.location,
-            dependency.egg_name() + ".egg-info",
-        )
-        paths_to_try.append(egg_info_path)
-
-        # also try replacing - with _ for a local .egg-info
-        egg_info_path = os.path.join(
-            dependency.location,
-            dependency.key.replace("-", "_") + ".egg-info",
-        )
-        paths_to_try.append(egg_info_path)
-
-        egg_name = dependency.egg_name()
-        egg_info_path = os.path.join(
-            dependency.location,
-            egg_name + ".egg",
-            "EGG-INFO",
-        )
-        paths_to_try.append(egg_info_path)
-
-        # could also be a .dist-info bundle
-        dist_info_name = "{}-{}.dist-info".format(
-            dependency.key.replace("-", "_"),
-            dependency.version,
-        )
-        dist_info_path = os.path.join(dependency.location, dist_info_name)
-        paths_to_try.append(dist_info_path)
-
-        # and try capitalized name in dist info, too
-        rr = dependency.as_requirement()
-        dist_info_name = "{}-{}.dist-info".format(
-            rr.name.replace("-", "_"),
-            dependency.version,
-        )
-        dist_info_path = os.path.join(dependency.location, dist_info_name)
-        paths_to_try.append(dist_info_path)
-
-    # loop our paths
-    for path in paths_to_try:
-
-        # return the first existing top_level.txt found
-        top_level_path = os.path.join(path, "top_level.txt")
-        if os.path.isfile(top_level_path):
-            return top_level_path
-
-    # uh oh
-    return None
-
-
 def _is_path_common_to_any(path, parents):
     """Return true if path is the subpath of any path in parents."""
 
@@ -1215,9 +1247,7 @@ def install_project(path, name):
 
     logger.info("[{}] installing project".format(name))
 
-    import pip._vendor.pkg_resources
-
-    package = pip._vendor.pkg_resources.working_set.by_key[name]
+    package = importlib.metadata.distribution(name)
 
     rv = install_local_package(path, package, name)
 
@@ -1344,14 +1374,12 @@ def write_eb_shim(path, entry):
 
 
 def insert_requirements_txt(path, type, renamed_packages, installed_dependencies):
-    import pip._internal.utils.misc
 
     if type != "flask-eb-reqs":
         return
 
-    # determine which packages are local packages and exclude them. we assume
-    # that packages installed with setup.py develop (which are editable) are
-    # local packages to exclude from the requirements file.
+    # determine which packages are local packages ane exclude them
+    import pip._internal.utils.misc
     local_packages = pip._internal.utils.misc.get_installed_distributions(
         editables_only=True,
         include_editables=True,
@@ -1363,11 +1391,13 @@ def insert_requirements_txt(path, type, renamed_packages, installed_dependencies
         for _, deps_in_section in installed_dependencies.items():
 
             for dep in deps_in_section:
-
-                if dep in local_packages:
+                if getattr(dep, 'name', None) is None:
                     continue
 
-                package_name = dep.key
+                if dep.name in local_packages:
+                    continue
+
+                package_name = dep.name
 
                 if renamed_packages is not None:
 
