@@ -768,7 +768,7 @@ def install_local_package(path, dependency, name):
                         continue
 
                     # python packaging makes no sense, case in point: setuptools
-                    if dependency.key == "setuptools" and line == ("dist", "pkg_resources"):
+                    if dependency.key == "setuptools" and line in ("dist", "pkg_resources"):
                         continue
 
                     # avoid a situation like:
