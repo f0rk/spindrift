@@ -5,7 +5,7 @@ from setuptools import setup
 
 setup(
     name="spindrift",
-    version="5.4",
+    version="5.5",
     description="package python applications for AWS Lambda, AWS Elastic Beanstalk, AWS Batch (Docker)",
     author="Ryan P. Kelly",
     author_email="ryan@ryankelly.us",
