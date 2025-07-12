@@ -32,6 +32,8 @@ IGNORED = [
     ".git/*",
     "*/__pycache__/*",
     "*/.git/*",
+    "*/.mypy_cache/*",
+    "*/.pytest_cache/*",
 ]
 
 
