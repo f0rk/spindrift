@@ -12,6 +12,7 @@ import packaging.utils
 import pathlib
 import re
 import shutil
+import stat
 import subprocess
 import tempfile
 import zipfile
@@ -1384,7 +1385,42 @@ def insert_requirements_txt(path, type, renamed_packages, installed_dependencies
 
 def create_zip_bundle(path, zip_path):
 
-    with zipfile.ZipFile(zip_path, "a", zipfile.ZIP_DEFLATED) as zf:
+    shared_objects = {}
+
+    # collect all so.1.1 or similar
+    for root, _, files in os.walk(path):
+        for file in files:
+            real_file_path = os.path.join(root, file)
+
+            maybe_match = re.search(r'(.+[.]so)(([.]\d+)+)$', real_file_path)
+            if maybe_match:
+                # path without .1.1
+                bare_so_path = maybe_match.groups()[0]
+                shared_objects.setdefault(bare_so_path, [])
+                if real_file_path not in shared_objects[bare_so_path]:
+                    shared_objects[bare_so_path].append(real_file_path)
+
+    # check all .so to see if they can be made symlinks to .so.1.1
+    symlinks = {}
+    for root, _, files in os.walk(path):
+        for file in files:
+            real_file_path = os.path.join(root, file)
+
+            if re.search(r'[.]so$', real_file_path):
+                if real_file_path in shared_objects:
+                    if len(shared_objects[real_file_path]) == 1:
+
+                        # check that they are the same file
+                        with open(real_file_path, "rb") as real_fp:
+                            real_data = real_fp.read()
+
+                        with open(shared_objects[real_file_path][0], "rb") as target_fp:
+                            target_data = target_fp.read()
+
+                        if real_data == target_data:
+                            symlinks[real_file_path] = shared_objects[real_file_path][0]
+
+    with zipfile.ZipFile(zip_path, "a", zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
         for root, _, files in os.walk(path):
             for file in files:
 
@@ -1393,17 +1429,31 @@ def create_zip_bundle(path, zip_path):
                 truncated = real_file_path[len(path):]
                 truncated = truncated.lstrip(os.sep)
 
-                # create a zip info object...
-                zi = zipfile.ZipInfo(truncated)
-                zi.compress_type = zipfile.ZIP_DEFLATED
+                if real_file_path in symlinks:
+                    source_truncated = symlinks[real_file_path][len(path):]
+                    source_truncated = source_truncated.lstrip(os.sep)
 
-                # ensure our files are readable
-                # XXX: seems like a hack...
-                zi.external_attr = 0o755 << 16
+                    zi = zipfile.ZipInfo(truncated)
+                    zi.create_system = 3
 
-                # ...and put it in our zip file
-                with open(real_file_path, "rb") as fp:
-                    zf.writestr(zi, fp.read(), zipfile.ZIP_DEFLATED)
+                    link_mode = stat.S_IFLNK | stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IWGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IWOTH | stat.S_IXOTH
+                    zi.external_attr = link_mode << 16
+
+                    zf.writestr(zi, source_truncated)
+                else:
+
+                    # create a zip info object...
+                    zi = zipfile.ZipInfo(truncated)
+                    zi.create_system = 3
+                    zi.compress_type = zipfile.ZIP_DEFLATED
+
+                    # ensure our files are readable
+                    # XXX: seems like a hack...
+                    zi.external_attr = 0o755 << 16
+
+                    # ...and put it in our zip file
+                    with open(real_file_path, "rb") as fp:
+                        zf.writestr(zi, fp.read(), zipfile.ZIP_DEFLATED)
 
 
 def output_zip_bundle(zip_path, destination):
