@@ -881,9 +881,9 @@ def install_local_package(path, dependency, name):
                     continue
 
                 ld_library_path = line.strip()
-                ld_library_path = ld_library_path.strip(":")
+                ld_library_path_parts = ld_library_path.split(":")
 
-                ld_library_paths.append(ld_library_path)
+                ld_library_paths.append(ld_library_path_parts[0])
 
             ldconfig_process.communicate()
 
