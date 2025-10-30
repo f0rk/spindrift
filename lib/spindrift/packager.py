@@ -289,7 +289,17 @@ def get_package_from_name(type, package_name, renamed_packages, boto_handling="d
     if package_name is None:
         return None
 
-    package = pip._vendor.pkg_resources.working_set.by_key[package_name]
+    if package_name in pip._vendor.pkg_resources.working_set.by_key:
+        package = pip._vendor.pkg_resources.working_set.by_key[package_name]
+    else:
+        normalized_target = packaging.utils.canonicalize_name(package_name)
+        package = None
+        for pkg in pip._vendor.pkg_resources.working_set:
+            if packaging.utils.canonicalize_name(pkg.key) == normalized_target:
+                package = pkg
+                break
+        if package is None:
+            raise KeyError(package_name)
 
     # boto is available on lambda, don't always repackage it
     if package.key in ("boto3", "botocore") and boto_handling == "default":
