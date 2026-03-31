@@ -849,6 +849,7 @@ def install_local_package(path, dependency, name):
                     source,
                     destination,
                     ignore=shutil.ignore_patterns(*IGNORED),
+                    dirs_exist_ok=True,
                 )
             else:
                 source = find_source_from_metadata(folder, name)
@@ -858,6 +859,7 @@ def install_local_package(path, dependency, name):
                         source,
                         destination,
                         ignore=shutil.ignore_patterns(*IGNORED),
+                        dirs_exist_ok=True,
                     )
                 else:
                     logger.warn(
